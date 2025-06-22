@@ -1,0 +1,19 @@
+{
+    "provider": "autogen_ext.models.openai.OpenAIChatCompletionClient",
+    "component_type": "model",
+    "version": 1,
+    "component_version": 1,
+    "description": "Chat completion client for OpenAI hosted models.",
+    "label": "gemini-2.5-flash-preview-04-17_Google",
+    "config": {
+        "model": "gemini-2.5-flash-preview-04-17",
+        "api_key": "**********",
+        "model_info": {
+            "vision": false,
+            "function_calling": true,
+            "json_output": true,
+            "family": "gemini-2.5-flash-preview-04-17"
+        },
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/"
+    }
+}

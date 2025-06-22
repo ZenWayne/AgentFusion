@@ -1,0 +1,19 @@
+{
+    "provider": "autogen_ext.models.openai.OpenAIChatCompletionClient",
+    "component_type": "model",
+    "version": 1,
+    "component_version": 1,
+    "description": "Chat completion client for OpenAI hosted models.",
+    "label": "qwq-32b_Aliyun",
+    "config": {
+        "model": "qwq-32b",
+        "api_key": "**********",
+        "model_info": {
+            "vision": false,
+            "function_calling": true,
+            "json_output": true,
+            "family": "unknown"
+        },
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    }
+}

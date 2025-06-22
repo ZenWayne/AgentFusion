@@ -1,0 +1,111 @@
+{
+    "agents": {
+        "human_proxy": {
+            "name": "human_proxy",
+            "description": "一个人类用户",
+            "labels":["human", "agent"],
+            "type": "user_proxy_agent",
+            "input_func": "wrapped_input"
+        },
+        "repeater": {
+            "name": "repeater",
+            "type": "assistant_agent",
+            "labels":["repeater", "agent"],
+            "description": "",
+            "prompt": "agent/repeater_pt.md",
+            "model_client": "deepseek-r1_Aliyun",
+            "mcp_tools": []
+        },
+
+        "prompt_refiner": {
+            "name": "prompt_refiner",
+            "type": "assistant_agent",
+            "labels":["prompt", "prompt_flow", "agent"],
+            "description": "与用户协作，通过分析反馈迭代优化Prompt，旨在提升最终产出效果。",
+            "prompt": "group_chat/prompt_flow/refiner_pt.md",
+            "model_client": "deepseek-r1_Aliyun",
+            "mcp_tools": []
+        },
+        "executor": {
+            "name": "executor",
+            "type": "assistant_agent",
+            "labels":["prompt", "prompt_flow", "agent"],
+            "description": "执行代理，负责执行具体的任务和操作",
+            "prompt": "group_chat/prompt_flow/executor_pt.md",
+            "model_client": "deepseek-r1_Aliyun",
+            "mcp_tools": []
+        },
+        "file_system": {
+            "name": "file_system",
+            "description": "文件系统操作代理，负责处理文件和目录相关的操作",
+            "labels":["file_system", "agent"],
+            "type": "assistant_agent",
+            "prompt": "agent/file_system_pt.md",
+            "model_client": "deepseek-r1_Aliyun",
+            "mcp_tools": ["file_system"]
+        },
+        "prompt_generalization": {
+            "name": "prompt_generalization",
+            "description": "提示词泛化专家，能将具体的任务提示词转换成适用于多种场景的通用模板，并保持其核心功能完整。",
+            "labels":["prompt", "prompt_specialization", "agent"],
+            "type": "assistant_agent",
+            "prompt": "agent/prompt_generalization_pt.md",
+            "model_client": "deepseek-r1_Aliyun",
+            "mcp_tools": []
+        },
+        "template_extractor": {
+            "name": "template_extractor",
+            "description": "从用户输入的提示词模板中提取参数化模板，并生成一个完整的提示词。",
+            "labels":["prompt", "prompt_specialization", "agent"],
+            "type": "assistant_agent",
+            "prompt": "agent/template_extractor_pt.md",
+            "model_client": "deepseek-r1_Aliyun",
+            "mcp_tools": []
+        },
+        "prompt_specialization": {
+            "name": "prompt_specialization",
+            "description": "通过交互式对话，引导用户填写参数化的提示词模板，以生成一个完整、具体的提示词。",
+            "labels":["prompt", "prompt_specialization", "agent"],
+            "type": "assistant_agent",
+            "prompt": "agent/prompt_specialization_pt.md",
+            "model_client": "deepseek-r1_Aliyun",
+            "mcp_tools": []
+        }
+    },
+    "group_chats": {
+        "prompt_flow": {
+            "name": "prompt_flow",
+            "description": "Prompt迭代器",
+            "labels":["prompt", "group_chat"],
+            "type": "selector_group_chat",
+            "selector_prompt": "group_chat/prompt_flow/selector_pt.md",
+            "model_client": "deepseek-r1_Aliyun",
+            "participants": ["prompt_refiner", "executor", "human_proxy"]
+        }
+    },
+    "graph_flows": {
+        "prompt_specialization": {
+            "name": "prompt_specialize_flow",
+            "description": "一个用于提示词特例化的工作流，该工作流从模板提取器（template_extractor）开始，然后将任务传递给提示词优化器（prompt_specialization）。",
+            "labels": ["prompt", "prompt_specialization", "group_chat", "graph_flow"],
+            "type": "graph_flow",
+            "participants": ["template_extractor", "prompt_specialization", "file_system", "human_proxy"],
+            "nodes": [
+                ["template_extractor", "prompt_specialization"],
+                [
+                    "prompt_specialization", 
+                    {
+                        "<Continue>": ["human_proxy"], 
+                        "<END>": ["file_system"]
+                    }
+                ],
+                [
+                    "human_proxy", 
+                    {
+                        "": ["prompt_specialization", "prompt_specialization_loop"]
+                    }
+                ]
+            ]
+        }
+    }
+}

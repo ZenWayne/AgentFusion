@@ -1,0 +1,18 @@
+{
+    "provider": "autogen_ext.models.openai.OpenAIChatCompletionClient",
+    "component_type": "model",
+    "version": 1,
+    "component_version": 1,
+    "description": "Chat completion client for OpenAI hosted models.",
+    "label": "deepseek-r1_DeepSeek",
+    "config": {
+        "model": "deepseek-chat",
+        "model_info": {
+            "vision": false,
+            "function_calling": true,
+            "json_output": true,
+            "family": "r1"
+        },
+        "base_url": "https://api.deepseek.com/v1"
+    }
+}

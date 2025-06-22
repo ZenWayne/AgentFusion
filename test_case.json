@@ -1,0 +1,52 @@
+{
+    "model_client_config": "${cwd}/.env",
+    "cases_for_test": [
+        "run_prompt_specialization"
+    ],
+    "cases": {
+        "run_file_system_agent": {
+            "name": "run_file_system_agent",
+            "type": "run",
+            "component": {
+                "type":"agent",
+                "name": "file_system"
+            },
+            "task": "列出当前文件夹下所有文件和文件夹"
+        },
+        "dump_file_system": {
+            "name": "dump_file_system",
+            "type": "dump",
+            "model_client": ["deepseek-chat_DeepSeek"],
+            "agents": ["file_system"],
+            "group_chats": ["prompt_flow"],
+            "output_path": "dumped_config"
+        },
+        "run_file_system": {
+            "name": "run_file_system",
+            "type": "run",
+            "component": {
+                "type":"agent",
+                "name": "file_system"
+            },
+            "task": "列出当前文件夹下所有文件和文件夹"
+        },
+        "run_prompt_flow": {
+            "name": "run_prompt_flow",
+            "type": "run",
+            "component": {
+                "type":"group_chat",
+                "name": "prompt_flow"
+            },
+            "task": "你是一个御姐"
+        },
+        "run_prompt_specialization": {
+            "name": "run_prompt_specialization",
+            "type": "run",
+            "component": {
+                "type":"graph_flow",
+                "name": "prompt_specialization"
+            },
+            "task": "${agent/ui_design_pt.md}"
+        }
+    }
+}
