@@ -1,4 +1,4 @@
-# AutoGen Demo
+# AutoGen Components library
 This repository show some typical usage of AutoGen.
 
 ##
