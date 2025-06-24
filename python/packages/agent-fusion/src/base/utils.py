@@ -11,6 +11,24 @@ from dataclass import AssistantAgentConfig, UserProxyAgentConfig
 
 prompt_path = ""
 
+def parse_cwd_placeholders(text: str) -> str:
+    """
+    Parse and replace ${cwd} placeholders in text with current working directory.
+    
+    Args:
+        text: The text containing ${cwd} placeholders
+        
+    Returns:
+        Text with ${cwd} placeholders replaced with current working directory
+    """
+    safe_pwd = os.getcwd()
+    # double escape, for windows
+    if os.name == "nt":
+        safe_pwd = safe_pwd.replace('\\', '\\\\')
+        safe_pwd = safe_pwd.replace('\\', '\\\\')
+    # Replace ${cwd} placeholders in the text
+    return re.sub(r"\${cwd}", safe_pwd, text, flags=re.ASCII)
+
 def dump_component(component_config:ComponentToConfig, agent_path:str):
     paths = agent_path.split('/')
     dir = join(dirname(dirname(abspath(__file__))), "agent_dump_config")
@@ -30,7 +48,7 @@ def dump_config(component_name:ComponentToConfig, path:str):
 def get_prompt(agent_path:str, spliter = '/') -> str:
     paths = agent_path.split(spliter)
 
-    dir = prompt_path
+    dir = parse_cwd_placeholders(agent_path)
     for path in paths[:-1]:
         dir = join(dir, path)
     agent_name = paths[-1]
@@ -43,6 +61,8 @@ def get_prompt(agent_path:str, spliter = '/') -> str:
             prompt_template = f.read()
     except:
         raise FileNotFoundError(f"prompt not found {agent_path}")
+    
+
     
     return prompt_template
 

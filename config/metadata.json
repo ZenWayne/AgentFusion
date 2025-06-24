@@ -107,5 +107,12 @@
                 ]
             ]
         }
+    },
+    "all_in_one": {
+        "name": "all_in_one",
+        "description": "一个用于提示词特例化的工作流，该工作流从模板提取器（template_extractor）开始，然后将任务传递给提示词优化器（prompt_specialization）。",
+        "labels": ["prompt", "prompt_specialization", "group_chat", "graph_flow"],
+        "type": "graph_flow",
+        "participants": ["template_extractor", "prompt_specialization", "file_system", "human_proxy"]
     }
 }
