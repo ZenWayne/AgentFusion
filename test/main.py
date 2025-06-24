@@ -11,14 +11,15 @@ from base import utils
 from opentelemetry import trace
 import os
 
-def init():    
-    utils.project_root = join(os.getcwd())
-    create_model_clients(dotenv_path=join(os.getcwd(), ".env"))
+def init():
+    test_utils.load_config(join(os.getcwd(), "test_case.json"))
+    utils.prompt_path = test_utils.test_config.prompt_config
+    create_model_clients(dotenv_path=test_utils.test_config.model_client_config)
     load_mcp_info(join(os.getcwd(), "config", "mcp.json"))
     load_agent_info(join(os.getcwd(), "config", "metadata.json"))
     load_group_chat_info(join(os.getcwd(), "config", "metadata.json"))
     load_graph_flow_info(join(os.getcwd(), "config", "metadata.json"))
-    test_utils.load_config(join(os.getcwd(), "test_case.json")) #??? wtf !??
+ #??? wtf !??
 
 async def main():
     init()

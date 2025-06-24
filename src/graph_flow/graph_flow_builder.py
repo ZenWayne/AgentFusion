@@ -39,19 +39,15 @@ async def GraphFlowBuilder(name: str) -> AsyncGenerator[SelectorGroupChat, None]
             # Handle multiple edges from the same source node
             for edge in node.edges:
                 target = participants_map[edge.target]
-                
-                if edge.condition is not None:
-                    # Handle conditional edges
-                    condition_to_target = {edge.condition: target}
-                    builder.add_conditional_edges(
-                        source, 
-                        condition_to_target,
-                        activation_group=edge.activation_group,
-                        activation_condition=edge.activation_condition
-                    )
-                else:
-                    # Handle simple edges
-                    builder.add_edge(source, target)
+
+                builder.add_edge(
+                    source=source, 
+                    target=target,
+                    condition=edge.condition,
+                    activation_group=edge.activation_group,
+                    activation_condition=edge.activation_condition
+                )
+
         # Build and validate the graph
         graph = builder.build()
 

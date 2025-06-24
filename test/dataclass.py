@@ -34,6 +34,7 @@ class DumpTestCase(BaseTestCase):
 AnyTestCase = Union[RunTestCase, DumpTestCase]
 
 class TestConfiguration(BaseModel):
+    prompt_config: str
     model_client_config: str
     cases_for_test: list[str]
     cases: dict[str, AnyTestCase]

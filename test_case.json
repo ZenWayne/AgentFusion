@@ -1,5 +1,6 @@
 {
     "model_client_config": "${cwd}/.env",
+    "prompt_config": "${cwd}/config/prompt",
     "cases_for_test": [
         "run_prompt_specialization"
     ],

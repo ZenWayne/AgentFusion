@@ -9,7 +9,7 @@ from aglogger import agentgenerator_logger as logger
 import json
 from dataclass import AssistantAgentConfig, UserProxyAgentConfig
 
-project_root = ""
+prompt_path = ""
 
 def dump_component(component_config:ComponentToConfig, agent_path:str):
     paths = agent_path.split('/')
@@ -30,7 +30,7 @@ def dump_config(component_name:ComponentToConfig, path:str):
 def get_prompt(agent_path:str, spliter = '/') -> str:
     paths = agent_path.split(spliter)
 
-    dir = join(project_root, "config", "prompt")
+    dir = prompt_path
     for path in paths[:-1]:
         dir = join(dir, path)
     agent_name = paths[-1]
