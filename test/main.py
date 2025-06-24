@@ -13,7 +13,7 @@ import os
 
 def init():
     test_utils.load_config(join(os.getcwd(), "test_case.json"))
-    utils.prompt_path = test_utils.test_config.prompt_config
+    utils.prompt_path = utils.parse_cwd_placeholders(test_utils.test_config.prompt_config)
     create_model_clients(dotenv_path=test_utils.test_config.model_client_config)
     load_mcp_info(join(os.getcwd(), "config", "mcp.json"))
     load_agent_info(join(os.getcwd(), "config", "metadata.json"))

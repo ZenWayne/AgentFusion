@@ -48,7 +48,8 @@ def dump_config(component_name:ComponentToConfig, path:str):
 def get_prompt(agent_path:str, spliter = '/') -> str:
     paths = agent_path.split(spliter)
 
-    dir = parse_cwd_placeholders(agent_path)
+    dir = prompt_path
+
     for path in paths[:-1]:
         dir = join(dir, path)
     agent_name = paths[-1]

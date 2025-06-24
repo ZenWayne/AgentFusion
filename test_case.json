@@ -1,8 +1,8 @@
 {
     "model_client_config": "${cwd}/.env",
-    "prompt_config": "${cwd}/config/prompt",
+    "prompt_config": "${cwd}\\config\\prompt",
     "cases_for_test": [
-        "run_prompt_specialization"
+        "run_prompt_flow"
     ],
     "cases": {
         "run_file_system_agent": {
@@ -38,7 +38,7 @@
                 "type":"group_chat",
                 "name": "prompt_flow"
             },
-            "task": "你是一个御姐"
+            "task": ""
         },
         "run_prompt_specialization": {
             "name": "run_prompt_specialization",
