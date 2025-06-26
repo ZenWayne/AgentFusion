@@ -2,7 +2,7 @@
     "model_client_config": "${cwd}/.env",
     "prompt_config": "${cwd}\\config\\prompt",
     "cases_for_test": [
-        "run_prompt_flow"
+        "run_prompt_specialization"
     ],
     "cases": {
         "run_file_system_agent": {
@@ -47,7 +47,25 @@
                 "type":"graph_flow",
                 "name": "prompt_specialization"
             },
-            "task": "${agent/ui_design_pt.md}"
+            "task": ""
+        },
+        "run_dispatcher": {
+            "name": "run_dispatcher",
+            "type": "run",
+            "component": {
+                "type":"agent",
+                "name": "dispatcher"
+            },
+            "task": "将用户输入的任务分解成多个子任务"
+        },
+        "run_hfil": {
+            "name": "run_hfil",
+            "type": "run",
+            "component": {
+                "type":"group_chat",
+                "name": "hfil"
+            },
+            "task": ""
         }
     }
 }

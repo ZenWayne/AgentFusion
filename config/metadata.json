@@ -2,10 +2,28 @@
     "agents": {
         "human_proxy": {
             "name": "human_proxy",
-            "description": "一个人类用户",
+            "description": "真的人类用户，除此以外都是agent",
             "labels":["human", "agent"],
             "type": "user_proxy_agent",
             "input_func": "wrapped_input"
+        },
+        "human_proxy_ui_designer": {
+            "name": "human_proxy_ui_designer",
+            "description": "交互设计师兼产品设计师，负责管理产品需求和设计,真的人类用户，除此以外都是agent",
+            "labels":["ui_designer", "agent"],
+            "type": "assistant_agent",
+            "prompt": "agent/ui_designer_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": []
+        },
+        "product_manager": {
+            "name": "product_manager",
+            "description": "产品经理，负责管理产品需求和设计,询问用户需求，并根据用户需求生成产品需求文档",
+            "labels":["product_manager", "agent"],
+            "type": "assistant_agent",
+            "prompt": "agent/prd_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": []
         },
         "repeater": {
             "name": "repeater",
@@ -16,7 +34,6 @@
             "model_client": "deepseek-chat_DeepSeek",
             "mcp_tools": []
         },
-
         "prompt_refiner": {
             "name": "prompt_refiner",
             "type": "assistant_agent",
@@ -70,6 +87,24 @@
             "prompt": "agent/prompt_specialization_pt.md",
             "model_client": "deepseek-chat_DeepSeek",
             "mcp_tools": []
+        },
+        "dispatcher": {
+            "name": "dispatcher",
+            "description": "任务分解专家，能将用户输入的任务分解成多个子任务，并生成一个任务分解的提示词。",
+            "labels":["agent", "task", "task_decomposition"],
+            "type": "assistant_agent",
+            "prompt": "group_chat/prompt_flow/dispatcher_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": []
+        },
+        "ui_designer": {
+            "name": "ui_designer",
+            "description": "ui_designer",
+            "labels":["agent", "ui_designer", "temperory"],
+            "type": "assistant_agent",
+            "prompt": "agent/ui_designer_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": []
         }
     },
     "group_chats": {
@@ -81,6 +116,15 @@
             "selector_prompt": "group_chat/prompt_flow/selector_pt.md",
             "model_client": "deepseek-chat_DeepSeek",
             "participants": ["prompt_refiner", "executor", "human_proxy", "file_system"]
+        },
+        "hfil": {
+            "name": "hfil",
+            "description": "hfil",
+            "labels":["group_chat", "hfil"],
+            "type": "selector_group_chat",
+            "selector_prompt": "group_chat/hfil/hfil_selector_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "participants": ["product_manager", "human_proxy_ui_designer", "file_system"]
         }
     },
     "graph_flows": {
@@ -89,23 +133,31 @@
             "description": "一个用于提示词特例化的工作流，该工作流从模板提取器（template_extractor）开始，然后将任务传递给提示词优化器（prompt_specialization）。",
             "labels": ["prompt", "prompt_specialization", "graph_flow"],
             "type": "graph_flow",
-            "participants": ["template_extractor", "prompt_specialization", "file_system", "human_proxy"],
+            "participants": ["template_extractor", "prompt_specialization", "file_system", "human_proxy_ui_designer", "human_proxy"],
             "nodes": [
+                ["human_proxy", "template_extractor"],
                 ["template_extractor", "prompt_specialization"],
                 [
                     "prompt_specialization", 
                     {
-                        "<Continue>": ["human_proxy"], 
-                        "<END>": ["file_system"]
+                        "<Continue>": ["human_proxy_ui_designer"], 
+                        "<END>": ["human_proxy"]
                     }
                 ],
                 [
-                    "human_proxy", 
+                    "human_proxy_ui_designer", 
                     {
                         "": ["prompt_specialization", "prompt_specialization_loop"]
                     }
+                ],
+                [
+                    "human_proxy",
+                    {
+                        "": ["file_system", "human_proxy_fs"]
+                    }
                 ]
-            ]
+            ],
+            "start_node": "human_proxy"
         }
     },
 

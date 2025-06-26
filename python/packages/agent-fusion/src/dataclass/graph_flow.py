@@ -75,6 +75,7 @@ class GraphFlowConfig(BaseModel):
     type: str
     participants: list[str]
     nodes: list[GraphFlowNode]
+    start_node: str
 
     @field_validator('nodes', mode='before')
     @classmethod

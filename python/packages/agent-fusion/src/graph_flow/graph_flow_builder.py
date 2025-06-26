@@ -47,7 +47,7 @@ async def GraphFlowBuilder(name: str) -> AsyncGenerator[SelectorGroupChat, None]
                     activation_group=edge.activation_group,
                     activation_condition=edge.activation_condition
                 )
-
+        builder.set_entry_point(graph_flow_config.start_node)
         # Build and validate the graph
         graph = builder.build()
 
