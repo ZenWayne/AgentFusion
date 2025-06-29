@@ -1,111 +1,216 @@
 # AgentFusion
 
-A powerful library for combining multiple AI assistant agents into a single, efficient workflow system. This repository provides tools and components to streamline the development of unified multi-agent applications using AutoGen.
+A powerful multi-agent orchestration framework built on Microsoft AutoGen. AgentFusion enables you to create, configure, and deploy complex AI agent workflows through three distinct interaction patterns: individual agents, group chats, and graph flows.
 
-## Features
+## 🌟 Features
 
-- **Agent Fusion**: Combine multiple specialized agents into unified workflows
-- **Efficient Orchestration**: Streamlined management of multi-agent interactions
-- **Workflow Management**: Build complex multi-agent workflows with ease
-- **AutoGen Studio Integration**: Export configurations for AutoGen Studio
-- **Model Client Support**: Multiple model provider integrations
-- **Configuration Management**: Centralized configuration system
+- **Multi-Agent Orchestration**: Deploy individual agents, group chats, or complex graph flows
+- **Flexible Configuration**: JSON-based configuration system for agents, workflows, and integrations
+- **Web Interface**: Chainlit-powered web UI for interactive agent conversations
+- **MCP Integration**: Model Context Protocol support for external tool integration
+- **AutoGen Studio Export**: Export configurations for use in AutoGen Studio
+- **Prompt Engineering**: Built-in agents for prompt optimization and specialization
+- **File System Operations**: MCP-enabled file system agent for document management
 
-## Installation
+## 🚀 Quick Start
+
+### 1. Installation
 
 ```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Install the package in development mode
+cd python/packages/agent_fusion
 pip install -e .
 ```
 
-## Quick Start
+### 2. Environment Setup
 
-### 1. Configure Your Project
+Create a `.env` file in the project root with your API keys:
 
-1. **Write agent prompts** under `config/prompt/`
-2. **Configure agents or workflows** in `config.json`
-
-### 2. Run Your Application
-
-```bash
-python -m chainlit run ./python/packages/agent_fusion/src/chainlit_web/run.py
+```env
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+DASHSCOPE_API_KEY=your_aliyun_api_key_here
+GEMINI_API_KEY=your_google_api_key_here
 ```
 
-## AutoGen Studio Support
+### 3. Launch Web Interface
 
-### Starting AutoGen Studio
+```bash
+chainlit run python/packages/agent_fusion/src/chainlit_web/run.py
+```
+
+The web interface will be available at `http://localhost:8000`
+
+## 📋 Project Structure
+
+```
+AgentFusion/
+├── config/                          # Configuration files
+│   ├── prompt/                      # Agent prompts organized by type
+│   │   ├── agent/                   # Individual agent prompts
+│   │   ├── group_chat/              # Group chat selectors
+│   │   └── ui_design/               # UI design prompts
+│   └── mem/                         # Memory configurations
+├── python/packages/agent_fusion/    # Main Python package
+│   └── src/
+│       ├── schemas/                 # Pydantic data models (formerly dataclass)
+│       ├── builders/                # Core builders for agents/workflows
+│       ├── chainlit_web/            # Web interface
+│       ├── model_client/            # Model client implementations
+│       ├── base/                    # Base utilities and MCP support
+│       └── dump/                    # Configuration export utilities
+├── config.json                     # Main configuration file
+├── dumped_config/                  # Exported configurations for AutoGen Studio
+└── requirements.txt                # Python dependencies
+```
+
+## 🤖 Agent Types
+
+### Individual Agents
+- **file_system**: File and directory operations via MCP
+- **product_manager**: Product requirement documentation
+- **prompt_refiner**: Prompt optimization and refinement
+- **executor**: Task execution specialist
+- **template_extractor**: Extract parameters from prompt templates
+- **prompt_specialization**: Interactive prompt customization
+
+### Group Chats
+- **prompt_flow**: Collaborative prompt development workflow
+- **hil**: Human-in-the-loop product management
+
+### Graph Flows
+- **prompt_specialization**: Template extraction → customization → execution workflow
+
+## ⚙️ Configuration
+
+### Agent Configuration
+
+Agents are defined in `config.json` under the `agents` section:
+
+```json
+{
+  "agents": {
+    "your_agent": {
+      "name": "your_agent",
+      "description": "Agent description",
+      "labels": ["tag1", "tag2"],
+      "type": "assistant_agent",
+      "prompt_path": "agent/your_prompt.md",
+      "model_client": "deepseek-chat_DeepSeek",
+      "mcp_tools": ["file_system"]
+    }
+  }
+}
+```
+
+### Group Chat Configuration
+
+```json
+{
+  "group_chats": {
+    "your_group": {
+      "name": "your_group",
+      "description": "Group description",
+      "type": "selector_group_chat",
+      "selector_prompt": "group_chat/your_selector.md",
+      "model_client": "deepseek-chat_DeepSeek",
+      "participants": ["agent1", "agent2", "human_proxy"]
+    }
+  }
+}
+```
+
+### Graph Flow Configuration
+
+```json
+{
+  "graph_flows": {
+    "your_flow": {
+      "name": "your_flow",
+      "description": "Workflow description",
+      "type": "graph_flow",
+      "participants": ["agent1", "agent2"],
+      "nodes": [
+        ["agent1", "agent2"],
+        ["agent2", {"condition": "agent1"}]
+      ],
+      "start_node": "agent1"
+    }
+  }
+}
+```
+
+## 🔧 Usage Examples
+
+### Export for AutoGen Studio
+
+Use the dump utilities to export your configuration:
+
+```python
+from dump import dump_agents, dump_group_chats
+
+# Export specific components
+dump_agents(["file_system"], "dumped_config")
+dump_group_chats(["prompt_flow"], "dumped_config")
+```
+
+## 🔗 AutoGen Studio Integration
+
+### 1. Start AutoGen Studio
 
 ```bash
 python -m autogenstudio.cli ui --port 8080 --appdir ./tmp/app
 ```
 
-### Export Configuration for AutoGen Studio
+### 2. Export Your Configuration
 
-To export your configuration for use in AutoGen Studio, add the following case to the `cases` section in `test_case.json`:
+Use the built-in dump utilities to export your configuration to the `dumped_config/` directory. The exported files can be imported directly into AutoGen Studio.
+
+## 🛠️ Development
+
+### Adding New Agents
+
+1. Create a prompt file in `config/prompt/agent/`
+2. Add agent configuration to `config.json`
+3. Test via the web interface
+
+### Custom MCP Tools
+
+Define MCP servers in the `mcpServers` section of `config.json`:
 
 ```json
 {
-    "dump_file_system": {
-        "name": "dump_file_system",
-        "type": "dump",
-        "model_client": ["deepseek-chat_DeepSeek"],
-        "agents": ["file_system"],
-        "group_chats": ["prompt_flow"],
-        "output_path": "dumped_config"
+  "mcpServers": {
+    "your_tool": {
+      "command": "your_command",
+      "args": ["arg1", "arg2"],
+      "env": {},
+      "read_timeout_seconds": 30
     }
+  }
 }
 ```
 
-## Project Structure
-
-```
-AgentFusion/
-├── config/                 # Configuration files
-│   ├── prompt/            # Agent prompts
-│   └── metadata.json      # Agent/workflow configurations
-├── src/                   # Source code
-│   ├── agent/            # Agent building components
-│   ├── group_chat/       # Group chat functionality
-│   ├── model_client/     # Model client implementations
-│   └── ...
-├── test/                 # Test files
-├── dumped_config/        # Exported configurations
-└── test_case.json        # Test case definitions
-```
-
-## Usage Examples
-
-### Basic Agent Setup
-
-1. Create your agent prompt in `config/prompt/agent/`
-2. Configure the agent in `config/metadata.json`
-3. Define test cases in `test_case.json`
-4. Run with `python -m test.main`
-
-### Workflow Configuration
-
-Configure multi-agent workflows by defining group chats and their interactions in the metadata configuration.
-
-## Contributing
+## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch
+2. Create a feature branch: `git checkout -b feature/your-feature`
 3. Make your changes
-4. Add tests if applicable
+4. Update tests and documentation
 5. Submit a pull request
 
-## Thanks
+## 📄 License
 
-This project is built on top of [AutoGen](https://github.com/microsoft/autogen), an amazing framework for building AI agents and workflows. Special thanks to the Microsoft AutoGen team for their groundbreaking work in making AI agent development accessible and powerful.
+MIT License - see LICENSE file for details
 
-## License
+## 🙏 Acknowledgments
 
-[Add your license information here]
+Built on top of [Microsoft AutoGen](https://github.com/microsoft/autogen) - an incredible framework for multi-agent AI applications. Special thanks to the AutoGen team for their pioneering work in multi-agent orchestration.
 
-## Support
+## 📞 Support
 
-For issues and questions, please [create an issue](link-to-issues) or refer to the documentation.
-
-```bash
-pip install -e .
-start autogen from python code
-```
+- Create an [issue](https://github.com/your-repo/issues) for bug reports or feature requests
+- Check the documentation in the `config/prompt/` directory for prompt examples
+- Review `config.json` for configuration patterns
