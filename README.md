@@ -22,13 +22,12 @@ pip install -e .
 ### 1. Configure Your Project
 
 1. **Write agent prompts** under `config/prompt/`
-2. **Configure agents or workflows** in `config/metadata.json`
-3. **Set up test cases** in `test_case.json`
+2. **Configure agents or workflows** in `config.json`
 
 ### 2. Run Your Application
 
 ```bash
-python -m test.main
+python -m chainlit run ./python/packages/agent_fusion/src/chainlit_web/run.py
 ```
 
 ## AutoGen Studio Support

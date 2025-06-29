@@ -1,0 +1,184 @@
+{
+    "prompt_root": "config/prompt",
+    "mcpServers": {
+        "file_system": {
+            "command": "npx",
+            "args": [
+                "-y", 
+                "@modelcontextprotocol/server-filesystem", 
+                "./"
+            ],
+            "env": {},
+            "read_timeout_seconds": 30
+        }
+    },
+    "agents": {
+        "human_proxy": {
+            "name": "human_proxy",
+            "description": "真的人类用户，除此以外都是agent",
+            "labels":["human", "agent"],
+            "type": "user_proxy_agent",
+            "input_func": "wrapped_input"
+        },
+        "human_proxy_ui_designer": {
+            "name": "human_proxy_ui_designer",
+            "description": "交互设计师兼产品设计师，负责管理产品需求和设计,真的人类用户，除此以外都是agent",
+            "labels":["ui_designer", "agent"],
+            "type": "assistant_agent",
+            "prompt_path": "agent/ui_designer_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": []
+        },
+        "product_manager": {
+            "name": "product_manager",
+            "description": "产品经理，负责管理产品需求和设计,询问用户需求，并根据用户需求生成产品需求文档",
+            "labels":["product_manager", "agent"],
+            "type": "assistant_agent",
+            "prompt_path": "agent/prd_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": []
+        },
+        "repeater": {
+            "name": "repeater",
+            "type": "assistant_agent",
+            "labels":["repeater", "agent"],
+            "description": "",
+            "prompt_path": "agent/repeater_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": []
+        },
+        "prompt_refiner": {
+            "name": "prompt_refiner",
+            "type": "assistant_agent",
+            "labels":["prompt", "prompt_flow", "agent"],
+            "description": "与用户协作，通过分析反馈迭代优化Prompt，旨在提升最终产出效果。",
+            "prompt_path": "group_chat/prompt_flow/refiner_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": []
+        },
+        "executor": {
+            "name": "executor",
+            "type": "assistant_agent",
+            "labels":["prompt", "prompt_flow", "agent"],
+            "description": "执行代理，负责执行具体的任务和操作",
+            "prompt_path": "group_chat/prompt_flow/executor_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": []
+        },
+        "file_system": {
+            "name": "file_system",
+            "description": "文件系统操作代理，负责处理文件和目录相关的操作",
+            "labels":["file_system", "agent"],
+            "type": "assistant_agent",
+            "prompt_path": "agent/file_system_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": ["file_system"]
+        },
+        "prompt_generalization": {
+            "name": "prompt_generalization",
+            "description": "提示词泛化专家，能将具体的任务提示词转换成适用于多种场景的通用模板，并保持其核心功能完整。",
+            "labels":["prompt", "prompt_specialization", "agent"],
+            "type": "assistant_agent",
+            "prompt_path": "agent/prompt_generalization_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": []
+        },
+        "template_extractor": {
+            "name": "template_extractor",
+            "description": "从用户输入的提示词模板中提取参数化模板，并生成一个完整的提示词。",
+            "labels":["prompt", "prompt_specialization", "agent"],
+            "type": "assistant_agent",
+            "prompt_path": "agent/template_extractor_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": []
+        },
+        "prompt_specialization": {
+            "name": "prompt_specialization",
+            "description": "通过交互式对话，引导用户填写参数化的提示词模板，以生成一个完整、具体的提示词。",
+            "labels":["prompt", "prompt_specialization", "agent"],
+            "type": "assistant_agent",
+            "prompt_path": "agent/prompt_specialization_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": []
+        },
+        "dispatcher": {
+            "name": "dispatcher",
+            "description": "任务分解专家，能将用户输入的任务分解成多个子任务，并生成一个任务分解的提示词。",
+            "labels":["agent", "task", "task_decomposition"],
+            "type": "assistant_agent",
+            "prompt_path": "group_chat/prompt_flow/dispatcher_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": []
+        },
+        "ui_designer": {
+            "name": "ui_designer",
+            "description": "ui_designer",
+            "labels":["agent", "ui_designer", "temperory"],
+            "type": "assistant_agent",
+            "prompt_path": "agent/ui_designer_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": []
+        }
+    },
+    "group_chats": {
+        "prompt_flow": {
+            "name": "prompt_flow",
+            "description": "Prompt迭代器",
+            "labels":["prompt", "group_chat"],
+            "type": "selector_group_chat",
+            "selector_prompt": "group_chat/prompt_flow/selector_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "participants": ["prompt_refiner", "executor", "human_proxy", "file_system"]
+        },
+        "hil": {
+            "name": "hil",
+            "description": "hil",
+            "labels":["group_chat", "hil"],
+            "type": "selector_group_chat",
+            "selector_prompt": "group_chat/hil/hil_selector_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "participants": ["product_manager", "human_proxy", "file_system"]
+        }
+    },
+    "graph_flows": {
+        "prompt_specialization": {
+            "name": "prompt_specialize_flow",
+            "description": "一个用于提示词特例化的工作流，该工作流从模板提取器（template_extractor）开始，然后将任务传递给提示词优化器（prompt_specialization）。",
+            "labels": ["prompt", "prompt_specialization", "graph_flow"],
+            "type": "graph_flow",
+            "participants": ["template_extractor", "prompt_specialization", "file_system", "human_proxy_ui_designer", "human_proxy"],
+            "nodes": [
+                ["human_proxy", "template_extractor"],
+                ["template_extractor", "prompt_specialization"],
+                [
+                    "prompt_specialization", 
+                    {
+                        "<Continue>": ["human_proxy_ui_designer"], 
+                        "<END>": ["human_proxy"]
+                    }
+                ],
+                [
+                    "human_proxy_ui_designer", 
+                    {
+                        "": ["prompt_specialization", "prompt_specialization_loop"]
+                    }
+                ],
+                [
+                    "human_proxy",
+                    {
+                        "": ["file_system", "human_proxy_fs"]
+                    }
+                ]
+            ],
+            "start_node": "human_proxy"
+        }
+    },
+
+    "all_in_one": {
+        "name": "all_in_one",
+        "description": "一个用于提示词特例化的工作流，该工作流从模板提取器（template_extractor）开始，然后将任务传递给提示词优化器（prompt_specialization）。",
+        "labels": ["prompt", "prompt_specialization", "group_chat", "graph_flow"],
+        "type": "graph_flow",
+        "participants": ["template_extractor", "prompt_specialization", "file_system", "human_proxy"]
+    }
+}

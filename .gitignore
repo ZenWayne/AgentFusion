@@ -41,6 +41,7 @@ chromadb/
 tmp/
 .DS_Store
 .cache/
+test/
 
 # Jupyter Notebook
 .ipynb_checkpoints 
