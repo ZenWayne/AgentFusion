@@ -95,7 +95,12 @@ class UISelectorGroupChatManager(SelectorGroupChatManager):
         """Handle a start event by sending the response to the user."""
         await super().handle_group_chat_message(message, ctx)
         inner_message : BaseAgentEvent | BaseTextChatMessage = message.message
+        inner_message.source = "user"
+        if inner_message.source == "user":
+            return
         if isinstance(inner_message, BaseTextChatMessage):
+            # Check if the message is from a user - if so, skip streaming
+            # Only stream messages from AI agents, not from human users
             if self._model_client_streaming == False:
                 await self._response.stream_token(inner_message.content)
                 await self._response.update()

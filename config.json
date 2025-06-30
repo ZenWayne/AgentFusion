@@ -13,10 +13,10 @@
         }
     },
     "agents": {
-        "human_proxy": {
-            "name": "human_proxy",
+        "user": {
+            "name": "user",
             "description": "真的人类用户，除此以外都是agent",
-            "labels":["human", "agent"],
+            "labels":["user", "agent"],
             "type": "user_proxy_agent",
             "input_func": "wrapped_input"
         },
@@ -128,7 +128,7 @@
             "type": "selector_group_chat",
             "selector_prompt": "group_chat/prompt_flow/selector_pt.md",
             "model_client": "deepseek-chat_DeepSeek",
-            "participants": ["prompt_refiner", "executor", "human_proxy", "file_system"]
+            "participants": ["prompt_refiner", "executor", "user", "file_system"]
         },
         "hil": {
             "name": "hil",
@@ -137,7 +137,7 @@
             "type": "selector_group_chat",
             "selector_prompt": "group_chat/hil/hil_selector_pt.md",
             "model_client": "deepseek-chat_DeepSeek",
-            "participants": ["product_manager", "human_proxy", "file_system"]
+            "participants": ["product_manager", "user", "file_system"]
         }
     },
     "graph_flows": {

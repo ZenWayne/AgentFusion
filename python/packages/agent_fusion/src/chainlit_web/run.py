@@ -31,9 +31,8 @@ class MessageChunk:
 
 message_chunks: Dict[str, Message] = {}
 
-message_queue : asyncio.Queue[str] = asyncio.Queue()
-
 async def wrap_input(prompt: str, token: CancellationToken) -> str:
+    message_queue = cast(asyncio.Queue[str], cl.user_session.get("message_queue"))  # type: ignore
     message = await message_queue.get()
     return message
 
@@ -70,6 +69,8 @@ async def start_chat() -> None:
             cl.user_session.set("groupchat", groupchat)  # type: ignore
             # Store the context manager for later exit
             cl.user_session.set("groupchat_context", async_context_manager)  # type: ignore
+            message_queue = asyncio.Queue()
+            cl.user_session.set("message_queue", message_queue)
         except Exception as e:
             # If something goes wrong, make sure to exit the context
             await async_context_manager.__aexit__(type(e), e, e.__traceback__)
@@ -80,6 +81,7 @@ async def start_chat() -> None:
 @cl.on_message  # type: ignore
 async def chat(message: cl.Message) -> None:
     # Get the assistant agent from the user session.
+    message_queue = cast(asyncio.Queue[str], cl.user_session.get("message_queue"))  # type: ignore
     message_queue.put_nowait(message.content)
     #group_chat = cast(BaseGroupChat, cl.user_session.get("groupchat"))  # type: ignore
     # topic_type = group_chat._output_topic_type
@@ -100,3 +102,12 @@ async def cleanup_groupchat() -> None:
 async def end_chat() -> None:
     """Called when chat session ends - cleanup resources"""
     await cleanup_groupchat()
+
+async def dry_run():
+    await start_chat()
+    await chat(cl.Message(content="Hello, how are you?"))
+    await end_chat()
+
+if __name__ == "__main__":
+    from chainlit.cli import run_chainlit
+    run_chainlit(__file__)
