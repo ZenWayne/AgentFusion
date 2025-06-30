@@ -45,3 +45,4 @@ test/
 
 # Jupyter Notebook
 .ipynb_checkpoints 
+.chainlit/
