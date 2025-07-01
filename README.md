@@ -1,6 +1,6 @@
 # AgentFusion
 
-A powerful multi-agent orchestration framework built on Microsoft AutoGen. AgentFusion enables you to create, configure, and deploy complex AI agent workflows through three distinct interaction patterns: individual agents, group chats, and graph flows.
+A powerful multi-agent orchestration framework built on ag2. AgentFusion enables you to create, configure, and deploy complex AI agent workflows through three distinct interaction patterns: individual agents, group chats, and graph flows.
 
 ## 🌟 Features
 
@@ -8,7 +8,6 @@ A powerful multi-agent orchestration framework built on Microsoft AutoGen. Agent
 - **Flexible Configuration**: JSON-based configuration system for agents, workflows, and integrations
 - **Web Interface**: Chainlit-powered web UI for interactive agent conversations
 - **MCP Integration**: Model Context Protocol support for external tool integration
-- **AutoGen Studio Export**: Export configurations for use in AutoGen Studio
 - **Prompt Engineering**: Built-in agents for prompt optimization and specialization
 - **File System Operations**: MCP-enabled file system agent for document management
 
@@ -17,12 +16,16 @@ A powerful multi-agent orchestration framework built on Microsoft AutoGen. Agent
 ### 1. Installation
 
 ```bash
+# Create and activate virtual environment using uv
+uv venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
 # Install dependencies
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 
 # Install the package in development mode
 cd python/packages/agent_fusion
-pip install -e .
+uv pip install -e .
 ```
 
 ### 2. Environment Setup
@@ -62,7 +65,7 @@ AgentFusion/
 │       ├── base/                    # Base utilities and MCP support
 │       └── dump/                    # Configuration export utilities
 ├── config.json                     # Main configuration file
-├── dumped_config/                  # Exported configurations for AutoGen Studio
+├── dumped_config/                  # Exported configurations
 └── requirements.txt                # Python dependencies
 ```
 
@@ -144,7 +147,7 @@ Agents are defined in `config.json` under the `agents` section:
 
 ## 🔧 Usage Examples
 
-### Export for AutoGen Studio
+### Export Configuration
 
 Use the dump utilities to export your configuration:
 
@@ -155,18 +158,6 @@ from dump import dump_agents, dump_group_chats
 dump_agents(["file_system"], "dumped_config")
 dump_group_chats(["prompt_flow"], "dumped_config")
 ```
-
-## 🔗 AutoGen Studio Integration
-
-### 1. Start AutoGen Studio
-
-```bash
-python -m autogenstudio.cli ui --port 8080 --appdir ./tmp/app
-```
-
-### 2. Export Your Configuration
-
-Use the built-in dump utilities to export your configuration to the `dumped_config/` directory. The exported files can be imported directly into AutoGen Studio.
 
 ## 🛠️ Development
 
@@ -207,7 +198,7 @@ MIT License - see LICENSE file for details
 
 ## 🙏 Acknowledgments
 
-Built on top of [Microsoft AutoGen](https://github.com/microsoft/autogen) - an incredible framework for multi-agent AI applications. Special thanks to the AutoGen team for their pioneering work in multi-agent orchestration.
+Built on top of [ag2](https://github.com/ag2ai/ag2) - an incredible framework for multi-agent AI applications. Special thanks to the ag2 team for their pioneering work in multi-agent orchestration.
 
 ## 📞 Support
 

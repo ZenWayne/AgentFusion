@@ -8,8 +8,7 @@
                 "@modelcontextprotocol/server-filesystem", 
                 "./"
             ],
-            "env": {},
-            "read_timeout_seconds": 30
+            "env": {}
         }
     },
     "agents": {

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator, model_validator
-from autogen_ext.tools.mcp import McpServerParams
+from mcp import StdioServerParameters
 from .model_info import model_client as model_client_label
 from enum import Enum
 from typing import Annotated, Any, Callable
@@ -27,7 +27,7 @@ class AssistantAgentConfig(BaseAgentConfig):
     prompt_path: str | None = None
     prompt: Callable[[], str] | None = None
     model_client: model_client_label
-    mcp_tools: list[McpServerParams] | None = None
+    mcp_tools: list[StdioServerParameters] | None = None
 
     @model_validator(mode='before')
     @classmethod

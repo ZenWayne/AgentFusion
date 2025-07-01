@@ -3,12 +3,10 @@ from pydantic import BaseModel
 from enum import Enum
 
 class ModelClientConfig(BaseModel):
-    label: str
-    model_name: str
+    api_type: str
+    model: str
     base_url: str
-    family: str
     api_key_type: str
-    stream: bool
 
 class model_client(str, Enum):
     deepseek_chat_DeepSeek= "deepseek-chat_DeepSeek"
@@ -22,59 +20,52 @@ class model_client(str, Enum):
 
 model_list = [
         {
-            "label": model_client.deepseek_chat_DeepSeek,
-            "model_name": "deepseek-chat",
+            "label": "deepseek-chat_DeepSeek",
+            "api_type": "openai",
+            "model": "deepseek-chat",
             "base_url": "https://api.deepseek.com/v1",
-            "family": ModelFamily.UNKNOWN,
             "api_key_type": "DEEPSEEK_API_KEY",
-            "stream": True
         },
         {
-            "label": model_client.deepseek_reasoner_DeepSeek,
-            "model_name": "deepseek-reasoner",
+            "label": "deepseek-reasoner_DeepSeek",
+            "api_type": "openai",
+            "model": "deepseek-reasoner",
             "base_url": "https://api.deepseek.com/v1",
-            "family": ModelFamily.R1,
             "api_key_type": "DEEPSEEK_API_KEY",
-            "stream": False
         },
         {
-            "label": model_client.qwq_plus_Aliyun,
-            "model_name": "qwq-plus-latest",
+            "label": "qwq-plus_Aliyun",
+            "api_type": "openai",
+            "model": "qwq-plus-latest",
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "family": ModelFamily.R1,
             "api_key_type": "DASHSCOPE_API_KEY",
-            "stream": True
         },
         {
-            "label": model_client.deepseek_r1_Aliyun,
-            "model_name": "deepseek-r1",
+            "label": "deepseek-r1_Aliyun",
+            "api_type": "openai",
+            "model": "deepseek-r1",
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "family": ModelFamily.R1,
             "api_key_type": "DASHSCOPE_API_KEY",
-            "stream": True
         },
         {
-            "label": model_client.deepseek_v3_Aliyun,
-            "model_name": "deepseek-v3",
+            "label": "deepseek-v3_Aliyun",
+            "api_type": "openai",
+            "model": "deepseek-v3",
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "family": ModelFamily.UNKNOWN,
             "api_key_type": "DASHSCOPE_API_KEY",
-            "stream": True
         },
         {
-            "label": model_client.qwq_32b_Aliyun,
-            "model_name": "qwq-32b",
+            "label": "qwq-32b_Aliyun",
+            "api_type": "openai",
+            "model": "qwq-32b",
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "family": ModelFamily.UNKNOWN,
             "api_key_type": "DASHSCOPE_API_KEY",
-            "stream": True
         },
         {
-            "label": model_client.gemini_2_5_flash_preview_04_17_Google,
-            "model_name": "gemini-2.5-flash-preview-04-17",
+            "label": "gemini-2.5-flash-preview-04-17_Google",
+            "api_type": "openai",
+            "model": "gemini-2.5-flash-preview-04-17",
             "base_url": "https://generativelanguage.googleapis.com/v1beta/",
-            "family": ModelFamily.GEMINI_2_5_FLASH,
             "api_key_type": "GEMINI_API_KEY",
-            "stream": True
         }
 ]
