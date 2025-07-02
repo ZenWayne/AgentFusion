@@ -3,7 +3,7 @@ from autogen_ext.tools.mcp import McpServerParams, StdioServerParams, SseServerP
 from schemas.agent import ComponentInfo, AgentType, AssistantAgentConfig, UserProxyAgentConfig
 from schemas.graph_flow import GraphFlowConfig
 from schemas.group_chat import SelectorGroupChatConfig
-from base.utils import get_prompt
+from base.utils import get_prompt, parse_cwd_placeholders
 
 prompt_root: str = ""
 McpInfo: dict[str, McpServerParams] = {}
@@ -19,7 +19,8 @@ def extract_mcp_tools(mcp_tools: list[str]) -> list[McpServerParams]:
 
 def load_info(config_path: str="config.json"):
     with open(config_path, "r", encoding="utf-8") as f:
-        metadata = json.load(f)
+        metadata = parse_cwd_placeholders(f.read())
+        metadata = json.loads(metadata)
     mcp_factory_func = {
         "stdio": StdioServerParams,
         "sse": SseServerParams

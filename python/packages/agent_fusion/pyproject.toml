@@ -15,11 +15,8 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "autogen-ext[mcp]==0.6.1",
-    "autogen-agentchat==0.6.1",
-    "autogen-core==0.6.1",
-    "autogen-ext==0.6.1",
-    "autogen_ext[openai]==0.6.1",
+    "ag2[openai,mcp]",
+    "chainlit>=2.6.0"
 ]
 
 [tool.setuptools.packages.find]

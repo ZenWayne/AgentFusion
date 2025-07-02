@@ -20,12 +20,18 @@ def parse_cwd_placeholders(text: str) -> str:
         Text with ${cwd} placeholders replaced with current working directory
     """
     safe_pwd = os.getcwd()
+    safe_user_home = os.path.expanduser("~")
     # double escape, for windows
     if os.name == "nt":
         safe_pwd = safe_pwd.replace('\\', '\\\\')
         safe_pwd = safe_pwd.replace('\\', '\\\\')
+        safe_user_home = safe_user_home.replace('\\', '\\\\')
+        safe_user_home = safe_user_home.replace('\\', '\\\\')
     # Replace ${cwd} placeholders in the text
-    return re.sub(r"\${cwd}", safe_pwd, text, flags=re.ASCII)
+    path = text
+    path= re.sub(r"\${cwd}", safe_pwd, path, flags=re.ASCII)
+    path= re.sub(r"\${userHome}", safe_user_home, path, flags=re.ASCII)
+    return path
 
 def dump_component(component_config:ComponentToConfig, agent_path:str):
     paths = agent_path.split('/')

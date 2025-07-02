@@ -29,7 +29,7 @@ class AgentBuilder:
                 async with stdio_client(mcp_server) as (read, write), ClientSession(read, write) as session:
                     # Initialize the connection
                     await session.initialize()
-                    toolkit = await create_toolkit(session)
+                    toolkit = await create_toolkit(session=session, use_mcp_resources=False)
                     toolkit.register_for_llm(agent)
                     yield agent, toolkit
 
@@ -48,10 +48,11 @@ async def test():
     load_info()
     agent = AgentBuilder()
     async with agent.build("file_system") as (agent, toolkit):
+        agent : AssistantAgent = agent
         result = await agent.a_run(
             message="""list the content of the current directory""",
             tools=toolkit.tools,
-            max_turns=2,
+            max_turns=4,
             user_input=False,
         )
         await result.process()
@@ -61,4 +62,4 @@ if __name__ == "__main__":
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(test())
-    #python -m agent.agent_builder
+    #python -m builders.agent_builder
