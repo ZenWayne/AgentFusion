@@ -1,5 +1,5 @@
 from schemas.group_chat import ComponentInfo, GroupChatType, SelectorGroupChatConfig
-from autogen_agentchat.teams import BaseGroupChat,SelectorGroupChat
+from autogen import GroupChat, GroupChatManager
 from model_client import ModelClient
 from base.utils import get_prompt
 from builders.agent_builder import AgentBuilder
@@ -17,41 +17,41 @@ class GroupChatBuilder:
         self._prompt_root: str = prompt_root
         self._input_func: Callable[[str], Awaitable[str]] | None = input_func
 
-    def _create_selector_group_chat(
-        self, 
-        participants: list[ChatAgent],
-        selector_prompt: str,
-        model_client: ChatCompletionClient,
-        ) -> Callable[[], SelectorGroupChat]:
-        def _factory() -> SelectorGroupChat:
-            return SelectorGroupChat(
-                participants=participants,
-                selector_prompt=selector_prompt,
-                model_client=model_client,
-            )
-        return _factory
-
-    @asynccontextmanager
-    async def build(self, name: str) -> AsyncGenerator[BaseGroupChat, None]:
+    async def build(self, name: str) -> GroupChatManager:
         group_chat_info: ComponentInfo = GroupChatInfo[name]
         
         agent_builder = AgentBuilder(self._input_func)
-        async with AsyncExitStack() as stack:
-            participants = await asyncio.gather(
-                *[stack.enter_async_context(agent_builder.build(participant)) 
-                for participant in group_chat_info.participants]
-            )
+        participants = await asyncio.gather(
+            *[agent_builder.build(participant) 
+            for participant in group_chat_info.participants]
+        )
+        selector_prompt = get_prompt(group_chat_info.selector_prompt, prompt_path=self._prompt_root)
+        groupchat = GroupChat(
+            agents=participants, 
+            messages=[], 
+            max_round=99, 
+            select_speaker_prompt_template=selector_prompt
+        )
+        model_client :dict = ModelClient[group_chat_info.model_client.value]
+        group_chat_manager = GroupChatManager(
+            groupchat=groupchat,
+            llm_config=model_client
+        )
+        return group_chat_manager
 
-            selector_prompt = get_prompt(group_chat_info.selector_prompt, prompt_path=self._prompt_root)
-            model_client :OpenAIChatCompletionClient = ModelClient[group_chat_info.model_client.value]()
-            if group_chat_info.type == GroupChatType.SELECTOR_GROUP_CHAT:
-                group_chat = self._create_selector_group_chat(
-                    participants=participants,
-                    selector_prompt=selector_prompt,
-                    model_client=model_client
-                )()
-                yield group_chat
-                await model_client.close()
-                await stack.aclose()
-            else:
-                raise ValueError(f"Invalid group chat type: {group_chat_info.type}")
+
+async def test():
+    from builders.utils import load_info
+    from autogen.agentchat.user_proxy_agent import UserProxyAgent
+    load_info()
+    builder = GroupChatBuilder("config/prompt")
+    group_chat_manager = await builder.build("prompt_flow")
+    user_proxy: UserProxyAgent = next(agent for agent in group_chat_manager.groupchat.agents if agent.name.startswith("user"))
+    if user_proxy:
+        user_proxy.initiate_chat(group_chat_manager)
+    else:
+        raise ValueError("User proxy not found")
+
+if __name__ == "__main__":
+    asyncio.run(test())
+    #python -m builders.group_chat_builder

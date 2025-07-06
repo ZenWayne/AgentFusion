@@ -24,42 +24,42 @@ model_list = [
             "api_type": "openai",
             "model": "deepseek-chat",
             "base_url": "https://api.deepseek.com/v1",
-            "api_key_type": "DEEPSEEK_API_KEY",
+            "api_key_type": "DEEPSEEK_API_KEY"
         },
         {
             "label": "deepseek-reasoner_DeepSeek",
             "api_type": "openai",
             "model": "deepseek-reasoner",
             "base_url": "https://api.deepseek.com/v1",
-            "api_key_type": "DEEPSEEK_API_KEY",
+            "api_key_type": "DEEPSEEK_API_KEY"
         },
         {
             "label": "qwq-plus_Aliyun",
             "api_type": "openai",
             "model": "qwq-plus-latest",
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "api_key_type": "DASHSCOPE_API_KEY",
+            "api_key_type": "DASHSCOPE_API_KEY"
         },
         {
             "label": "deepseek-r1_Aliyun",
             "api_type": "openai",
             "model": "deepseek-r1",
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "api_key_type": "DASHSCOPE_API_KEY",
+            "api_key_type": "DASHSCOPE_API_KEY"
         },
         {
             "label": "deepseek-v3_Aliyun",
             "api_type": "openai",
             "model": "deepseek-v3",
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "api_key_type": "DASHSCOPE_API_KEY",
+            "api_key_type": "DASHSCOPE_API_KEY"
         },
         {
             "label": "qwq-32b_Aliyun",
             "api_type": "openai",
             "model": "qwq-32b",
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "api_key_type": "DASHSCOPE_API_KEY",
+            "api_key_type": "DASHSCOPE_API_KEY"
         },
         {
             "label": "gemini-2.5-flash-preview-04-17_Google",

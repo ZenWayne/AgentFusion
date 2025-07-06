@@ -1,0 +1,35 @@
+# OpenTelemetry核心依赖
+opentelemetry-api>=1.20.0
+opentelemetry-sdk>=1.20.0
+
+# 导出器
+opentelemetry-exporter-jaeger-thrift>=1.20.0
+opentelemetry-exporter-zipkin-json>=1.20.0
+opentelemetry-exporter-otlp>=1.20.0
+
+# 自动仪表化
+opentelemetry-instrumentation>=0.41b0
+opentelemetry-instrumentation-requests>=0.41b0
+opentelemetry-instrumentation-sqlite3>=0.41b0
+opentelemetry-instrumentation-logging>=0.41b0
+opentelemetry-instrumentation-asyncio>=0.41b0
+
+# 可选：OTLP协议支持
+opentelemetry-exporter-otlp-proto-grpc>=1.20.0
+opentelemetry-exporter-otlp-proto-http>=1.20.0
+
+# 可选：Prometheus指标导出
+opentelemetry-exporter-prometheus>=1.12.0rc1
+
+# 可选：云服务导出器
+# opentelemetry-exporter-gcp-trace>=1.6.0  # Google Cloud
+# opentelemetry-exporter-aws-xray>=1.0.1   # AWS X-Ray
+# opentelemetry-exporter-azure-monitor>=1.0.0b21  # Azure Monitor
+
+# 工具和实用程序
+opentelemetry-propagator-b3>=1.20.0
+opentelemetry-propagator-jaeger>=1.20.0
+
+# 用于演示的附加依赖
+requests>=2.25.0
+aiohttp>=3.8.0 

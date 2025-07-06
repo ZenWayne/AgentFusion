@@ -359,6 +359,572 @@ class TestAgentBuilder:
         assert mock_tool.component_label == "test_tool"
 
 
+class TestGroupChatBuilder:
+    """Test cases for the GroupChatBuilder class."""
+    
+    @pytest.fixture
+    def mock_group_chat_config(self):
+        """Mock group chat configuration for testing."""
+        mock_config = MagicMock()
+        mock_config.participants = ["test_assistant", "test_user_proxy"]
+        mock_config.selector_prompt = "group_chat/test/selector_pt.md"
+        mock_config.model_client = MagicMock()
+        mock_config.model_client.value = "deepseek-chat_DeepSeek"
+        return mock_config
+    
+    @pytest.fixture
+    def mock_input_func(self):
+        """Mock input function for testing."""
+        async def mock_input(prompt: str) -> str:
+            return f"Mock response to: {prompt}"
+        return mock_input
+    
+    def setup_method(self):
+        """Clear global dictionaries before each test."""
+        McpInfo.clear()
+        AgentInfo.clear()
+        GraphFlowInfo.clear()
+        GroupChatInfo.clear()
+    
+    def test_group_chat_builder_init(self, mock_input_func):
+        """Test GroupChatBuilder initialization."""
+        from builders.group_chat_builder import GroupChatBuilder
+        
+        prompt_root = "config/prompt"
+        builder = GroupChatBuilder(prompt_root, mock_input_func)
+        
+        assert builder._prompt_root == prompt_root
+        assert builder._input_func == mock_input_func
+    
+    def test_group_chat_builder_init_default_input(self):
+        """Test GroupChatBuilder initialization with default input function."""
+        from builders.group_chat_builder import GroupChatBuilder
+        
+        prompt_root = "config/prompt"
+        builder = GroupChatBuilder(prompt_root)
+        
+        assert builder._prompt_root == prompt_root
+        assert callable(builder._input_func) or builder._input_func is None
+    
+    @pytest.mark.asyncio
+    @patch('builders.group_chat_builder.GroupChatInfo')
+    @patch('builders.group_chat_builder.AgentBuilder')
+    @patch('builders.group_chat_builder.GroupChat')
+    @patch('builders.group_chat_builder.GroupChatManager')
+    @patch('builders.group_chat_builder.get_prompt')
+    @patch('builders.group_chat_builder.ModelClient')
+    async def test_group_chat_builder_build_success(
+        self, mock_model_client, mock_get_prompt, mock_group_chat_manager_class,
+        mock_group_chat_class, mock_agent_builder_class, mock_group_chat_info,
+        mock_group_chat_config, mock_input_func
+    ):
+        """Test successful building of a group chat."""
+        from builders.group_chat_builder import GroupChatBuilder
+        
+        # Setup mocks
+        mock_group_chat_info.__getitem__.return_value = mock_group_chat_config
+        
+        # Mock agent builder and agents
+        mock_agent_1 = MagicMock()
+        mock_agent_2 = MagicMock()
+        mock_agent_builder = MagicMock()
+        
+        # Create proper async context managers for agents
+        async def mock_agent_1_context():
+            return mock_agent_1
+        
+        async def mock_agent_2_context():
+            return mock_agent_2
+        
+        mock_agent_context_1 = AsyncMock()
+        mock_agent_context_1.__aenter__ = AsyncMock(return_value=mock_agent_1)
+        mock_agent_context_1.__aexit__ = AsyncMock(return_value=None)
+        
+        mock_agent_context_2 = AsyncMock()
+        mock_agent_context_2.__aenter__ = AsyncMock(return_value=mock_agent_2)
+        mock_agent_context_2.__aexit__ = AsyncMock(return_value=None)
+        
+        mock_agent_builder.build.side_effect = [mock_agent_context_1, mock_agent_context_2]
+        mock_agent_builder_class.return_value = mock_agent_builder
+        
+        # Mock GroupChat
+        mock_group_chat = MagicMock()
+        mock_group_chat_class.return_value = mock_group_chat
+        
+        # Mock GroupChatManager
+        mock_group_chat_manager = MagicMock()
+        mock_group_chat_manager_class.return_value = mock_group_chat_manager
+        
+        # Mock prompt
+        mock_get_prompt.return_value = "Test selector prompt"
+        
+        # Mock model client
+        mock_model_client_instance = MagicMock()
+        mock_model_client_instance.close = AsyncMock()
+        mock_model_client.__getitem__.return_value = MagicMock(return_value=mock_model_client_instance)
+        
+        # Create builder and test
+        builder = GroupChatBuilder("config/prompt", mock_input_func)
+        
+        async with builder.build("test_group") as group_chat_manager:
+            assert group_chat_manager == mock_group_chat_manager
+            
+            # Verify calls
+            mock_group_chat_info.__getitem__.assert_called_once_with("test_group")
+            mock_agent_builder_class.assert_called_once_with(mock_input_func)
+            mock_get_prompt.assert_called_once_with(
+                mock_group_chat_config.selector_prompt, 
+                prompt_path="config/prompt"
+            )
+            mock_group_chat_class.assert_called_once_with(
+                agents=[mock_agent_1, mock_agent_2], 
+                messages=[], 
+                max_round=99
+            )
+            mock_group_chat_manager_class.assert_called_once_with(
+                groupchat=mock_group_chat,
+                llm_config=mock_model_client_instance,
+            )
+        
+        # Verify cleanup
+        mock_model_client_instance.close.assert_called_once()
+    
+    @pytest.mark.asyncio
+    @patch('builders.group_chat_builder.GroupChatInfo')
+    @patch('builders.group_chat_builder.AgentBuilder')
+    async def test_group_chat_builder_build_agent_not_found(
+        self, mock_agent_builder_class, mock_group_chat_info, mock_input_func
+    ):
+        """Test building with non-existent agent."""
+        from builders.group_chat_builder import GroupChatBuilder
+        
+        # Setup mocks
+        mock_group_chat_config = MagicMock()
+        mock_group_chat_config.participants = ["non_existent_agent"]
+        mock_group_chat_info.__getitem__.return_value = mock_group_chat_config
+        
+        # Mock agent builder to raise exception
+        mock_agent_builder = MagicMock()
+        mock_agent_builder.build.side_effect = KeyError("Agent not found")
+        mock_agent_builder_class.return_value = mock_agent_builder
+        
+        builder = GroupChatBuilder("config/prompt", mock_input_func)
+        
+        with pytest.raises(KeyError):
+            async with builder.build("test_group"):
+                pass
+    
+    @pytest.mark.asyncio
+    @patch('builders.group_chat_builder.GroupChatInfo')
+    async def test_group_chat_builder_build_group_not_found(self, mock_group_chat_info, mock_input_func):
+        """Test building with non-existent group chat."""
+        from builders.group_chat_builder import GroupChatBuilder
+        
+        # Setup mock to raise KeyError
+        mock_group_chat_info.__getitem__.side_effect = KeyError("Group chat not found")
+        
+        builder = GroupChatBuilder("config/prompt", mock_input_func)
+        
+        with pytest.raises(KeyError):
+            async with builder.build("non_existent_group"):
+                pass
+    
+    @pytest.mark.asyncio
+    @patch('builders.group_chat_builder.GroupChatInfo')
+    @patch('builders.group_chat_builder.AgentBuilder')
+    @patch('builders.group_chat_builder.GroupChat')
+    @patch('builders.group_chat_builder.GroupChatManager')
+    @patch('builders.group_chat_builder.get_prompt')
+    @patch('builders.group_chat_builder.ModelClient')
+    async def test_group_chat_builder_build_cleanup_on_exception(
+        self, mock_model_client, mock_get_prompt, mock_group_chat_manager_class,
+        mock_group_chat_class, mock_agent_builder_class, mock_group_chat_info,
+        mock_group_chat_config, mock_input_func
+    ):
+        """Test that resources are cleaned up when an exception occurs."""
+        from builders.group_chat_builder import GroupChatBuilder
+        
+        # Setup mocks
+        mock_group_chat_info.__getitem__.return_value = mock_group_chat_config
+        
+        # Mock agent builder
+        mock_agent_builder = MagicMock()
+        mock_agent_context = AsyncMock()
+        mock_agent_context.__aenter__ = AsyncMock(return_value=MagicMock())
+        mock_agent_context.__aexit__ = AsyncMock(return_value=None)
+        mock_agent_builder.build.return_value = mock_agent_context
+        mock_agent_builder_class.return_value = mock_agent_builder
+        
+        # Mock model client
+        mock_model_client_instance = MagicMock()
+        mock_model_client_instance.close = AsyncMock()
+        mock_model_client.__getitem__.return_value = MagicMock(return_value=mock_model_client_instance)
+        
+        # Mock GroupChatManager to raise exception
+        mock_group_chat_manager_class.side_effect = RuntimeError("Test error")
+        
+        # Mock other dependencies
+        mock_get_prompt.return_value = "Test prompt"
+        mock_group_chat_class.return_value = MagicMock()
+        
+        builder = GroupChatBuilder("config/prompt", mock_input_func)
+        
+        with pytest.raises(RuntimeError):
+            async with builder.build("test_group"):
+                pass
+        
+        # Verify cleanup still happened
+        mock_model_client_instance.close.assert_called_once()
+    
+    @pytest.mark.asyncio
+    @patch('builders.group_chat_builder.GroupChatInfo')
+    @patch('builders.group_chat_builder.AgentBuilder')
+    @patch('builders.group_chat_builder.GroupChat')
+    @patch('builders.group_chat_builder.GroupChatManager')
+    @patch('builders.group_chat_builder.get_prompt')
+    @patch('builders.group_chat_builder.ModelClient')
+    async def test_group_chat_builder_build_with_multiple_participants(
+        self, mock_model_client, mock_get_prompt, mock_group_chat_manager_class,
+        mock_group_chat_class, mock_agent_builder_class, mock_group_chat_info,
+        mock_input_func
+    ):
+        """Test building with multiple participants."""
+        from builders.group_chat_builder import GroupChatBuilder
+        
+        # Setup mock config with multiple participants
+        mock_group_chat_config = MagicMock()
+        mock_group_chat_config.participants = ["agent_1", "agent_2", "agent_3"]
+        mock_group_chat_config.selector_prompt = "group_chat/test/selector_pt.md"
+        mock_group_chat_config.model_client = MagicMock()
+        mock_group_chat_config.model_client.value = "deepseek-chat_DeepSeek"
+        
+        mock_group_chat_info.__getitem__.return_value = mock_group_chat_config
+        
+        # Mock agent builder and agents
+        mock_agents = [MagicMock(), MagicMock(), MagicMock()]
+        mock_agent_builder = MagicMock()
+        
+        # Create proper async context managers for each agent
+        mock_contexts = []
+        for i, agent in enumerate(mock_agents):
+            context = AsyncMock()
+            context.__aenter__ = AsyncMock(return_value=agent)
+            context.__aexit__ = AsyncMock(return_value=None)
+            mock_contexts.append(context)
+        
+        mock_agent_builder.build.side_effect = mock_contexts
+        mock_agent_builder_class.return_value = mock_agent_builder
+        
+        # Mock other dependencies
+        mock_group_chat = MagicMock()
+        mock_group_chat_class.return_value = mock_group_chat
+        mock_group_chat_manager = MagicMock()
+        mock_group_chat_manager_class.return_value = mock_group_chat_manager
+        mock_get_prompt.return_value = "Test selector prompt"
+        
+        # Mock model client
+        mock_model_client_instance = MagicMock()
+        mock_model_client_instance.close = AsyncMock()
+        mock_model_client.__getitem__.return_value = MagicMock(return_value=mock_model_client_instance)
+        
+        builder = GroupChatBuilder("config/prompt", mock_input_func)
+        
+        async with builder.build("test_group") as group_chat_manager:
+            assert group_chat_manager == mock_group_chat_manager
+            
+            # Verify GroupChat was created with all agents
+            mock_group_chat_class.assert_called_once_with(
+                agents=mock_agents, 
+                messages=[], 
+                max_round=99
+            )
+    
+    @pytest.mark.asyncio
+    @patch('builders.group_chat_builder.GroupChatInfo')
+    @patch('builders.group_chat_builder.AgentBuilder')
+    @patch('builders.group_chat_builder.GroupChat')
+    @patch('builders.group_chat_builder.GroupChatManager')
+    @patch('builders.group_chat_builder.get_prompt')
+    @patch('builders.group_chat_builder.ModelClient')
+    async def test_group_chat_builder_build_with_custom_prompt_root(
+        self, mock_model_client, mock_get_prompt, mock_group_chat_manager_class,
+        mock_group_chat_class, mock_agent_builder_class, mock_group_chat_info,
+        mock_group_chat_config, mock_input_func
+    ):
+        """Test building with custom prompt root."""
+        from builders.group_chat_builder import GroupChatBuilder
+        
+        # Setup mocks
+        mock_group_chat_info.__getitem__.return_value = mock_group_chat_config
+        
+        # Mock agent builder
+        mock_agent_builder = MagicMock()
+        mock_contexts = []
+        for i in range(2):
+            context = AsyncMock()
+            context.__aenter__ = AsyncMock(return_value=MagicMock())
+            context.__aexit__ = AsyncMock(return_value=None)
+            mock_contexts.append(context)
+        
+        mock_agent_builder.build.side_effect = mock_contexts
+        mock_agent_builder_class.return_value = mock_agent_builder
+        
+        # Mock other dependencies
+        mock_group_chat_class.return_value = MagicMock()
+        mock_group_chat_manager_class.return_value = MagicMock()
+        mock_get_prompt.return_value = "Test prompt"
+        
+        # Mock model client
+        mock_model_client_instance = MagicMock()
+        mock_model_client_instance.close = AsyncMock()
+        mock_model_client.__getitem__.return_value = MagicMock(return_value=mock_model_client_instance)
+        
+        # Test with custom prompt root
+        custom_prompt_root = "custom/prompt/path"
+        builder = GroupChatBuilder(custom_prompt_root, mock_input_func)
+        
+        async with builder.build("test_group"):
+            pass
+        
+        # Verify get_prompt was called with custom prompt root
+        mock_get_prompt.assert_called_once_with(
+            mock_group_chat_config.selector_prompt, 
+            prompt_path=custom_prompt_root
+        )
+    
+    @pytest.mark.asyncio
+    @patch('builders.group_chat_builder.GroupChatInfo')
+    @patch('builders.group_chat_builder.AgentBuilder')
+    @patch('builders.group_chat_builder.GroupChat')
+    @patch('builders.group_chat_builder.GroupChatManager')
+    @patch('builders.group_chat_builder.get_prompt')
+    @patch('builders.group_chat_builder.ModelClient')
+    async def test_group_chat_builder_integration_with_chat_scenario(
+        self, mock_model_client, mock_get_prompt, mock_group_chat_manager_class,
+        mock_group_chat_class, mock_agent_builder_class, mock_group_chat_info,
+        mock_input_func
+    ):
+        """Integration test: Build group chat and test conversation scenario."""
+        from builders.group_chat_builder import GroupChatBuilder
+        
+        # Setup group chat configuration
+        mock_group_chat_config = MagicMock()
+        mock_group_chat_config.participants = ["number_transformer", "calculator_agent"]
+        mock_group_chat_config.selector_prompt = "group_chat/math/selector_pt.md"
+        mock_group_chat_config.model_client = MagicMock()
+        mock_group_chat_config.model_client.value = "deepseek-chat_DeepSeek"
+        mock_group_chat_info.__getitem__.return_value = mock_group_chat_config
+        
+        # Mock participating agents
+        mock_number_transformer = MagicMock()
+        mock_number_transformer.name = "number_transformer"
+        mock_calculator_agent = MagicMock()
+        mock_calculator_agent.name = "calculator_agent"
+        
+        # Create async context managers for agents
+        mock_transformer_context = AsyncMock()
+        mock_transformer_context.__aenter__ = AsyncMock(return_value=mock_number_transformer)
+        mock_transformer_context.__aexit__ = AsyncMock(return_value=None)
+        
+        mock_calculator_context = AsyncMock()
+        mock_calculator_context.__aenter__ = AsyncMock(return_value=mock_calculator_agent)
+        mock_calculator_context.__aexit__ = AsyncMock(return_value=None)
+        
+        # Mock agent builder
+        mock_agent_builder = MagicMock()
+        mock_agent_builder.build.side_effect = [mock_transformer_context, mock_calculator_context]
+        mock_agent_builder_class.return_value = mock_agent_builder
+        
+        # Mock GroupChat and GroupChatManager
+        mock_group_chat = MagicMock()
+        mock_group_chat_class.return_value = mock_group_chat
+        
+        mock_group_chat_manager = MagicMock()
+        mock_group_chat_manager_class.return_value = mock_group_chat_manager
+        
+        # Mock other dependencies
+        mock_get_prompt.return_value = "You are a selector that chooses the best agent for mathematical tasks."
+        mock_model_client_instance = MagicMock()
+        mock_model_client_instance.close = AsyncMock()
+        mock_model_client.__getitem__.return_value = MagicMock(return_value=mock_model_client_instance)
+        
+        # Create a mock number agent that will initiate chats
+        mock_number_agent = MagicMock()
+        mock_number_agent.name = "number_agent"
+        
+        # Mock the chat results
+        mock_chat_results = [
+            {
+                "recipient": mock_group_chat_manager,
+                "message": "My number is 3, I want to turn it into 13.",
+                "summary": "Successfully transformed 3 into 13 by adding 10",
+                "cost": {"total_cost": 0.001},
+                "human_input": []
+            },
+            {
+                "recipient": mock_group_chat_manager,
+                "message": "Turn this number to 32.",
+                "summary": "Successfully transformed 13 into 32 by adding 19",
+                "cost": {"total_cost": 0.002},
+                "human_input": []
+            }
+        ]
+        
+        # Mock the initiate_chats method
+        mock_number_agent.initiate_chats.return_value = mock_chat_results
+        
+        # Test the integration
+        builder = GroupChatBuilder("config/prompt", mock_input_func)
+        
+        async with builder.build("math_group") as group_chat_manager:
+            # Verify the group chat manager was created correctly
+            assert group_chat_manager == mock_group_chat_manager
+            
+            # Simulate the conversation scenario
+            chat_result = mock_number_agent.initiate_chats([
+                {
+                    "recipient": group_chat_manager,
+                    "message": "My number is 3, I want to turn it into 13.",
+                },
+                {
+                    "recipient": group_chat_manager,
+                    "message": "Turn this number to 32.",
+                },
+            ])
+            
+            # Verify the chat results
+            assert len(chat_result) == 2
+            
+            # Test first chat result
+            first_chat = chat_result[0]
+            assert first_chat["message"] == "My number is 3, I want to turn it into 13."
+            assert first_chat["recipient"] == group_chat_manager
+            assert "3" in first_chat["summary"] and "13" in first_chat["summary"]
+            assert first_chat["cost"]["total_cost"] > 0
+            
+            # Test second chat result
+            second_chat = chat_result[1]
+            assert second_chat["message"] == "Turn this number to 32."
+            assert second_chat["recipient"] == group_chat_manager
+            assert "32" in second_chat["summary"]
+            assert second_chat["cost"]["total_cost"] > 0
+            
+            # Verify total cost is accumulated correctly
+            total_cost = sum(chat["cost"]["total_cost"] for chat in chat_result)
+            assert total_cost == 0.003  # 0.001 + 0.002
+            
+            # Verify all expected components were created
+            mock_group_chat_class.assert_called_once_with(
+                agents=[mock_number_transformer, mock_calculator_agent],
+                messages=[],
+                max_round=99
+            )
+            
+            mock_group_chat_manager_class.assert_called_once_with(
+                groupchat=mock_group_chat,
+                llm_config=mock_model_client_instance,
+            )
+            
+            # Verify the agents were built correctly
+            assert mock_agent_builder.build.call_count == 2
+            mock_agent_builder.build.assert_any_call("number_transformer")
+            mock_agent_builder.build.assert_any_call("calculator_agent")
+        
+        # Verify cleanup
+        mock_model_client_instance.close.assert_called_once()
+    
+    @pytest.mark.asyncio
+    @patch('builders.group_chat_builder.GroupChatInfo')
+    @patch('builders.group_chat_builder.AgentBuilder')
+    @patch('builders.group_chat_builder.GroupChat')
+    @patch('builders.group_chat_builder.GroupChatManager')
+    @patch('builders.group_chat_builder.get_prompt')
+    @patch('builders.group_chat_builder.ModelClient')
+    async def test_group_chat_builder_integration_with_error_handling(
+        self, mock_model_client, mock_get_prompt, mock_group_chat_manager_class,
+        mock_group_chat_class, mock_agent_builder_class, mock_group_chat_info,
+        mock_input_func
+    ):
+        """Integration test: Test error handling in conversation scenario."""
+        from builders.group_chat_builder import GroupChatBuilder
+        
+        # Setup group chat configuration
+        mock_group_chat_config = MagicMock()
+        mock_group_chat_config.participants = ["error_prone_agent"]
+        mock_group_chat_config.selector_prompt = "group_chat/error/selector_pt.md"
+        mock_group_chat_config.model_client = MagicMock()
+        mock_group_chat_config.model_client.value = "deepseek-chat_DeepSeek"
+        mock_group_chat_info.__getitem__.return_value = mock_group_chat_config
+        
+        # Mock agent
+        mock_agent = MagicMock()
+        mock_agent.name = "error_prone_agent"
+        
+        mock_agent_context = AsyncMock()
+        mock_agent_context.__aenter__ = AsyncMock(return_value=mock_agent)
+        mock_agent_context.__aexit__ = AsyncMock(return_value=None)
+        
+        mock_agent_builder = MagicMock()
+        mock_agent_builder.build.return_value = mock_agent_context
+        mock_agent_builder_class.return_value = mock_agent_builder
+        
+        # Mock GroupChat and GroupChatManager
+        mock_group_chat = MagicMock()
+        mock_group_chat_class.return_value = mock_group_chat
+        
+        mock_group_chat_manager = MagicMock()
+        mock_group_chat_manager_class.return_value = mock_group_chat_manager
+        
+        # Mock other dependencies
+        mock_get_prompt.return_value = "Error handling selector prompt"
+        mock_model_client_instance = MagicMock()
+        mock_model_client_instance.close = AsyncMock()
+        mock_model_client.__getitem__.return_value = MagicMock(return_value=mock_model_client_instance)
+        
+        # Create a mock agent that will initiate chats
+        mock_initiator_agent = MagicMock()
+        mock_initiator_agent.name = "initiator_agent"
+        
+        # Mock chat results with error scenario
+        mock_chat_results = [
+            {
+                "recipient": mock_group_chat_manager,
+                "message": "This should cause an error.",
+                "summary": "Error occurred during processing",
+                "cost": {"total_cost": 0.001},
+                "human_input": [],
+                "error": "ValueError: Invalid input provided"
+            }
+        ]
+        
+        mock_initiator_agent.initiate_chats.return_value = mock_chat_results
+        
+        # Test the integration
+        builder = GroupChatBuilder("config/prompt", mock_input_func)
+        
+        async with builder.build("error_group") as group_chat_manager:
+            # Simulate conversation with error
+            chat_result = mock_initiator_agent.initiate_chats([
+                {
+                    "recipient": group_chat_manager,
+                    "message": "This should cause an error.",
+                },
+            ])
+            
+            # Verify error was handled correctly
+            assert len(chat_result) == 1
+            first_chat = chat_result[0]
+            assert "error" in first_chat
+            assert first_chat["error"] == "ValueError: Invalid input provided"
+            assert "Error occurred" in first_chat["summary"]
+            
+            # Verify cost is still tracked even with errors
+            assert first_chat["cost"]["total_cost"] > 0
+        
+        # Verify cleanup happened even with errors
+        mock_model_client_instance.close.assert_called_once()
+
+
 class TestIntegration:
     """Integration tests for load_info and AgentBuilder."""
     

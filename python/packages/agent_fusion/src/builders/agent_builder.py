@@ -1,9 +1,10 @@
-from autogen import AssistantAgent, UserProxyAgent
+from autogen import AssistantAgent, UserProxyAgent, config_list_from_json, filter_config
 from schemas.agent import AssistantAgentConfig, UserProxyAgentConfig, AgentType
 from model_client import ModelClient
 from builders.utils import AgentInfo
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Callable, Awaitable
+from autogen.agentchat.realtime_agent import RealtimeAgent
 
 from autogen.mcp import create_toolkit
 from mcp import StdioServerParameters, ClientSession, stdio_client
@@ -12,16 +13,23 @@ class AgentBuilder:
     def __init__(self, input_func: Callable[[str], Awaitable[str]] | None = input):
         self._input_func: Callable[[str], Awaitable[str]] | None = input_func
 
-    @asynccontextmanager
-    async def build(self, name: str) -> AsyncGenerator[AssistantAgent | UserProxyAgent, None]:
+    async def build(self, name: str) -> AssistantAgent | UserProxyAgent:
         agent_info: AssistantAgentConfig| UserProxyAgentConfig = AgentInfo[name]
 
         if agent_info.type == AgentType.ASSISTANT_AGENT:
             model_client = ModelClient[agent_info.model_client.value]
             prompt = agent_info.prompt()
+            config_list = filter_config(
+                config_list=[model_client],
+                filter_dict={
+                    "model": [model_client["model"]],
+                }
+            )
             agent = AssistantAgent(
                 name=agent_info.name,
-                llm_config=model_client,
+                llm_config={
+                    "config_list": config_list,
+                },
                 system_message=prompt,
                 description=agent_info.description
             )
@@ -31,15 +39,17 @@ class AgentBuilder:
                     await session.initialize()
                     toolkit = await create_toolkit(session=session, use_mcp_resources=False)
                     toolkit.register_for_llm(agent)
-                    yield agent, toolkit
+            return agent
 
         elif agent_info.type == AgentType.USER_PROXY_AGENT:
             agent = UserProxyAgent(
                 name=agent_info.name,
-                input_func=self._input_func
+                is_termination_msg=lambda msg: "TERMINATE" in msg["content"],
+                human_input_mode="ALWAYS",
+                max_consecutive_auto_reply=1,
+                description=agent_info.description
             )
-            agent.component_label = agent_info.name
-            yield agent
+            return agent
         else:
             raise ValueError(f"Invalid agent type: {agent_info.type}")
 
@@ -55,6 +65,7 @@ async def test():
             max_turns=4,
             user_input=False,
         )
+        agent.initiate_chat()
         await result.process()
 
 if __name__ == "__main__":

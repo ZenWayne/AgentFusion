@@ -1,0 +1,4 @@
+letta-client>=0.1.0 
+e2b-code-interpreter==1.5.1
+e2b==1.5.4
+orjson
