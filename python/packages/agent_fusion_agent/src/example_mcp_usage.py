@@ -117,7 +117,7 @@ async def example_handle_response_mechanism():
             self.response_count = 0
             self.handled_responses = []
         
-        async def handle_response(self, response, **context):
+        async def handle_llm_response(self, response, **context):
             """重写handle_response以展示机制"""
             self.response_count += 1
             self.handled_responses.append({
@@ -130,7 +130,7 @@ async def example_handle_response_mechanism():
             print(f"   上下文: {list(context.keys())}")
             
             # 调用父类的handle_response
-            await super().handle_response(response, **context)
+            await super().handle_llm_response(response, **context)
     
     # 设置LLM客户端
     llm_manager = get_llm_client_manager()
@@ -187,7 +187,7 @@ async def example_component_handle_response():
             self.mock_context_engine = MockComponent("MockContextEngine")
             self.mock_llm_client = MockComponent("MockLLMClient")
         
-        async def handle_response(self, response, **context):
+        async def handle_llm_response(self, response, **context):
             """演示组件handle_response调用"""
             print(f"🚀 开始调用组件handle_response方法...")
             
@@ -196,7 +196,7 @@ async def example_component_handle_response():
             await self.mock_llm_client.handle_response(response, **context)
             
             # 调用父类的handle_response
-            await super().handle_response(response, **context)
+            await super().handle_llm_response(response, **context)
             
             print(f"✅ 所有组件handle_response调用完成")
     

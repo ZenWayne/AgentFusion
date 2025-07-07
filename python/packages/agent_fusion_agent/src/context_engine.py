@@ -4,7 +4,7 @@
 """
 
 import re
-from typing import Dict, List, Optional, Any, Callable, Union
+from typing import Dict, List, Optional, Any, Callable, Union, Iterator
 from jinja2 import Template, Environment, BaseLoader, TemplateError
 from .exceptions import ContextEngineException
 from .context_variable import Context
@@ -81,7 +81,7 @@ class ContextEngine:
         Returns:
             变量字典
         """
-        return self.variables.copy()
+        return self.variables
     
     def get_context(self, agent_id: Optional[str] = None) -> Dict[str, Any]:
         """获取上下文信息

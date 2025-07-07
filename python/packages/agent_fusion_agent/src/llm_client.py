@@ -8,8 +8,13 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any, AsyncGenerator, Iterator, Union
 from dataclasses import dataclass
 from .exceptions import LLMClientException, TimeoutException
-from .observability import get_observability_manager, InteractionStatus
+import litellm
 
+@dataclass
+class LLMModelConfig:
+    model: str
+    api_key: str
+    base_url: str
 
 @dataclass
 class LLMResponse:
@@ -122,27 +127,21 @@ class LiteLLMClient(LLMClientBase):
     使用LiteLLM库与各种LLM提供商进行交互。
     """
     
-    def __init__(self, default_model: Optional[str] = None, 
-                 timeout: Optional[int] = None):
+    def __init__(self, model: Optional[str] = None, api_key: Optional[str] = None, 
+                 base_url: Optional[str] = None, timeout: Optional[int] = None):
         """初始化LiteLLM客户端
         
         Args:
-            default_model: 默认模型名称
+            model: 默认模型名称
+            api_key: API密钥
+            base_url: 基础URL
             timeout: 请求超时时间（秒）
         """
-        self.default_model = default_model
+        self.default_model = model
+        self.api_key = api_key
+        self.base_url = base_url
         self.timeout = timeout
-        self.observability = get_observability_manager()
-        
-        # 尝试导入LiteLLM
-        try:
-            import litellm
-            self.litellm = litellm
-        except ImportError:
-            raise LLMClientException(
-                "LiteLLM not installed. Please install it with: pip install litellm",
-                error_code="LITELLM_NOT_INSTALLED"
-            )
+
     
     async def chat_completion(self, messages: List[Dict[str, Any]], 
                              model: Optional[str] = None, **kwargs) -> LLMResponse:
@@ -151,14 +150,7 @@ class LiteLLMClient(LLMClientBase):
         if not model:
             raise LLMClientException("Model not specified and no default model set")
         
-        # 开始可观测性追踪
-        interaction_id = self.observability.start_interaction()
-        
         try:
-            self.observability.record_llm_request(
-                interaction_id, model, messages, **kwargs
-            )
-            
             # 准备参数
             completion_params = {
                 "model": model,
@@ -166,35 +158,30 @@ class LiteLLMClient(LLMClientBase):
                 **kwargs
             }
             
+            # 设置API密钥和基础URL
+            if self.api_key:
+                completion_params["api_key"] = self.api_key
+            if self.base_url:
+                completion_params["base_url"] = self.base_url
+            
             # 设置超时
             if self.timeout:
                 completion_params["timeout"] = self.timeout
             
             # 调用LiteLLM
-            response = await self.litellm.acompletion(**completion_params)
+            response = await litellm.acompletion(**completion_params)
             
             # 构造响应对象
             llm_response = self._create_response_from_litellm(response, model)
             
-            # 记录响应
-            self.observability.record_llm_response(
-                interaction_id, llm_response.to_dict(), InteractionStatus.SUCCESS
-            )
-            
             return llm_response
             
         except Exception as e:
-            # 记录错误
-            self.observability.record_error(interaction_id, e)
-            
             # 转换为框架异常
             if "timeout" in str(e).lower():
                 raise TimeoutException(f"LLM request timeout: {e}")
             else:
                 raise LLMClientException(f"LLM request failed: {e}")
-        
-        finally:
-            self.observability.end_interaction(interaction_id)
     
     async def stream_chat_completion(self, messages: List[Dict[str, Any]], 
                                    model: Optional[str] = None, 
@@ -204,14 +191,7 @@ class LiteLLMClient(LLMClientBase):
         if not model:
             raise LLMClientException("Model not specified and no default model set")
         
-        # 开始可观测性追踪
-        interaction_id = self.observability.start_interaction()
-        
         try:
-            self.observability.record_llm_request(
-                interaction_id, model, messages, **kwargs
-            )
-            
             # 准备参数
             completion_params = {
                 "model": model,
@@ -220,12 +200,18 @@ class LiteLLMClient(LLMClientBase):
                 **kwargs
             }
             
+            # 设置API密钥和基础URL
+            if self.api_key:
+                completion_params["api_key"] = self.api_key
+            if self.base_url:
+                completion_params["base_url"] = self.base_url
+            
             # 设置超时
             if self.timeout:
                 completion_params["timeout"] = self.timeout
             
             # 调用LiteLLM流式接口
-            stream = await self.litellm.acompletion(**completion_params)
+            stream = await litellm.acompletion(**completion_params)
             
             accumulated_content = ""
             
@@ -249,11 +235,7 @@ class LiteLLMClient(LLMClientBase):
                     yield stream_chunk
                     
                 except Exception as chunk_error:
-                    # 记录块处理错误但继续处理
-                    self.observability.logger.warning(
-                        f"Error processing stream chunk: {chunk_error}",
-                        interaction_id=interaction_id
-                    )
+                    # 忽略块处理错误但继续处理
                     continue
             
             # 发送最终块
@@ -264,25 +246,12 @@ class LiteLLMClient(LLMClientBase):
             )
             yield final_chunk
             
-            # 记录最终响应
-            self.observability.record_llm_response(
-                interaction_id, 
-                {"content": accumulated_content, "model": model}, 
-                InteractionStatus.SUCCESS
-            )
-            
         except Exception as e:
-            # 记录错误
-            self.observability.record_error(interaction_id, e)
-            
             # 转换为框架异常
             if "timeout" in str(e).lower():
                 raise TimeoutException(f"LLM stream request timeout: {e}")
             else:
                 raise LLMClientException(f"LLM stream request failed: {e}")
-        
-        finally:
-            self.observability.end_interaction(interaction_id)
     
     def _create_response_from_litellm(self, response: Any, model: str) -> LLMResponse:
         """从LiteLLM响应创建LLMResponse对象
@@ -379,18 +348,11 @@ class MockLLMClient(LLMClientBase):
         """
         self.default_response = default_response
         self.delay = delay
-        self.observability = get_observability_manager()
     
     async def chat_completion(self, messages: List[Dict[str, Any]], 
                              model: str, **kwargs) -> LLMResponse:
         """模拟聊天完成"""
-        interaction_id = self.observability.start_interaction()
-        
         try:
-            self.observability.record_llm_request(
-                interaction_id, model, messages, **kwargs
-            )
-            
             # 模拟处理延迟
             await asyncio.sleep(self.delay)
             
@@ -402,28 +364,15 @@ class MockLLMClient(LLMClientBase):
                 metadata={"mock": True}
             )
             
-            self.observability.record_llm_response(
-                interaction_id, response.to_dict(), InteractionStatus.SUCCESS
-            )
-            
             return response
             
         except Exception as e:
-            self.observability.record_error(interaction_id, e)
-            raise
-        finally:
-            self.observability.end_interaction(interaction_id)
+            raise LLMClientException(f"Mock LLM request failed: {e}")
     
     async def stream_chat_completion(self, messages: List[Dict[str, Any]], 
                                    model: str, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
         """模拟流式聊天完成"""
-        interaction_id = self.observability.start_interaction()
-        
         try:
-            self.observability.record_llm_request(
-                interaction_id, model, messages, **kwargs
-            )
-            
             # 分块发送响应
             words = self.default_response.split()
             
@@ -445,17 +394,8 @@ class MockLLMClient(LLMClientBase):
             )
             yield final_chunk
             
-            self.observability.record_llm_response(
-                interaction_id, 
-                {"content": self.default_response, "model": model}, 
-                InteractionStatus.SUCCESS
-            )
-            
         except Exception as e:
-            self.observability.record_error(interaction_id, e)
-            raise
-        finally:
-            self.observability.end_interaction(interaction_id)
+            raise LLMClientException(f"Mock LLM stream request failed: {e}")
 
 
 class LLMClientManager:

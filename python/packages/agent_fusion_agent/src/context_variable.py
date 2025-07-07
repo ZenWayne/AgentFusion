@@ -46,6 +46,30 @@ class Context(Generic[T], ABC):
         """
         pass
 
+
+class StaticContextVariable(Context):
+    """静态上下文变量
+    
+    用于包装简单的静态值。
+    """
+    
+    def __init__(self, value: Any, context_engine: Optional['ContextEngine'] = None):
+        super().__init__(context_engine)
+        self._value = value
+    
+    def to_context(self) -> str:
+        """返回变量的字符串表示"""
+        return str(self._value)
+    
+    def update(self, context_data: Any) -> None:
+        """更新值"""
+        self._value = context_data
+    
+    def get_value(self) -> Any:
+        """获取当前值"""
+        return self._value
+
+
 #这里改为MessageContext
 class HistoryContextVariable(Context):
     """历史记录上下文变量

@@ -111,7 +111,7 @@ class InMemoryMessageQueue(MessageQueueBase, Context[Message]):
     将消息存储在内存中，适用于临时或测试场景。
     """
     
-    def __init__(self, max_messages: Optional[int] = None):
+    def __init__(self, max_messages: Optional[int] = 50):
         """初始化内存消息队列
         
         Args:

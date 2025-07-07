@@ -35,7 +35,6 @@ from .exceptions import (
 from .context_variable import (
     Context,
     StaticContextVariable,
-    DynamicContextVariable,
     HistoryContextVariable,
     GroupChatContextVariable
 )
@@ -112,13 +111,10 @@ from .group_chat import (
 # 导出会话相关
 from .session import (
     SessionConfig,
-    SessionHandler,
-    AgentSessionHandler,
-    GroupChatSessionHandler,
+    SessionableAgent,
+    SessionableGroupChat,
     Session,
-    SessionManager,
-    get_session_manager,
-    create_session
+    SessionManager
 )
 
 # 导出会话工具
@@ -164,7 +160,6 @@ __all__ = [
     # 上下文变量
     "Context",
     "StaticContextVariable",
-    "DynamicContextVariable", 
     "HistoryContextVariable",
     "GroupChatContextVariable",
     
@@ -225,13 +220,10 @@ __all__ = [
     
     # 会话
     "SessionConfig",
-    "SessionHandler",
-    "AgentSessionHandler",
-    "GroupChatSessionHandler",
+    "SessionableAgent",
+    "SessionableGroupChat",
     "Session",
     "SessionManager",
-    "get_session_manager",
-    "create_session",
     
     # 会话工具
     "create_session_with_timeout",

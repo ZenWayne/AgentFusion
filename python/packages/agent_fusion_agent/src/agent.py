@@ -13,12 +13,12 @@ from contextlib import asynccontextmanager
 from mcp import StdioServerParameters, ClientSession, stdio_client
 from autogen.mcp import create_toolkit
 
-from context_engine import ContextEngine
-from llm_client import LLMClientBase, LLMResponse, LLMStreamChunk, get_llm_client_manager
-from mcp_client import MCPClientBase, get_mcp_client_manager
-from message_queue import MessageQueueBase, Message, get_message_queue_manager
-from observability import get_observability_manager
-from exceptions import AgentException, ValidationException
+from .context_engine import ContextEngine, Context
+from .llm_client import LLMClientBase, LLMResponse, LLMStreamChunk, get_llm_client_manager
+from .mcp_client import MCPClientBase, get_mcp_client_manager
+from .message_queue import MessageQueueBase, Message, get_message_queue_manager, InMemoryMessageQueue
+from .observability import get_observability_manager
+from .exceptions import AgentException, ValidationException
 
 
 @dataclass
@@ -58,267 +58,6 @@ class AgentConfig:
         }
 
 
-class AgentBase(ABC, AgentConfig):
-    """Agent抽象基类
-    
-    定义智能体的基本接口和行为规范。
-    """
-    
-    def __init__(self, config: AgentConfig):
-        """初始化Agent
-        
-        Args:
-            config: Agent配置
-        """
-        super().__init__(config)
-        self.context_engine = ContextEngine()
-        self.observability = get_observability_manager()
-        
-        # 初始化组件管理器
-        self.llm_manager = get_llm_client_manager()
-        self.mcp_manager = get_mcp_client_manager()
-        self.message_manager = get_message_queue_manager()
-        
-        # 初始化LLM客户端
-        self.llm_client = None
-        
-        # 初始化组件
-        self._initialize_components()
-    
-    @abstractmethod
-    async def process_message(self, message: str, **kwargs) -> LLMResponse:
-        """处理消息的抽象方法
-        
-        Args:
-            message: 输入消息
-            **kwargs: 其他参数
-            
-        Returns:
-            LLM响应
-        """
-        pass
-    
-    @abstractmethod
-    async def stream_process_message(self, message: str, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
-        """流式处理消息的抽象方法
-        
-        Args:
-            message: 输入消息
-            **kwargs: 其他参数
-            
-        Returns:
-            异步生成器，产生流式响应块
-        """
-        pass
-    
-    def _initialize_components(self) -> None:
-        """初始化组件"""
-        # 初始化上下文变量
-        for var_name, var_value in self.config.context_variables.items():
-            self.context_engine.register_variable(var_name, var_value)
-        
-        # 初始化LLM客户端
-        self.llm_client = self.get_llm_client()
-        
-        # 确保消息队列存在
-        if self.config.message_queue_id:
-            self.message_manager.get_or_create_queue(
-                self.config.message_queue_id, 
-                queue_type="memory"
-            )
-    
-    async def handle_response(self, response: LLMResponse, **context) -> None:
-        """处理响应，调用所有底层组件的handle_response方法
-        
-        Args:
-            response: LLM响应
-            **context: 上下文信息
-        """
-        # 调用上下文引擎的handle_response
-        if hasattr(self.context_engine, 'handle_response'):
-            try:
-                await self.context_engine.handle_response(response, **context)
-            except Exception as e:
-                self.observability.logger.warning(f"Context engine handle_response failed: {e}")
-        
-        # 调用LLM客户端的handle_response
-        if self.llm_client and hasattr(self.llm_client, 'handle_response'):
-            try:
-                await self.llm_client.handle_response(response, **context)
-            except Exception as e:
-                self.observability.logger.warning(f"LLM client handle_response failed: {e}")
-        
-        #CR: 这里不能呢用mcp_client相关，移到MCPMixin中处理
-        # 调用MCP客户端的handle_response
-        mcp_client = self.get_mcp_client()
-        if mcp_client and hasattr(mcp_client, 'handle_response'):
-            try:
-                await mcp_client.handle_response(response, **context)
-            except Exception as e:
-                self.observability.logger.warning(f"MCP client handle_response failed: {e}")
-        
-        # 调用消息队列的handle_response
-        message_queue = self.get_message_queue()
-        if message_queue and hasattr(message_queue, 'handle_response'):
-            try:
-                await message_queue.handle_response(response, **context)
-            except Exception as e:
-                self.observability.logger.warning(f"Message queue handle_response failed: {e}")
-        
-        # 调用可观测性的handle_response
-        if hasattr(self.observability, 'handle_response'):
-            try:
-                await self.observability.handle_response(response, **context)
-            except Exception as e:
-                self.observability.logger.warning(f"Observability handle_response failed: {e}")
-    
-    def get_llm_client(self) -> Optional[LLMClientBase]:
-        """获取LLM客户端
-        
-        Returns:
-            LLM客户端实例
-        """
-        return self.llm_manager.get_client(self.config.llm_client_name)
-    
-    #CR:不要get_mcp_client，会误导开发者
-    def get_mcp_client(self) -> Optional[MCPClientBase]:
-        """获取MCP客户端
-        
-        Returns:
-            MCP客户端实例
-        """
-        return self.mcp_manager.get_client(self.config.mcp_client_name)
-    
-    def get_message_queue(self) -> Optional[MessageQueueBase]:
-        """获取消息队列
-        
-        Returns:
-            消息队列实例
-        """
-        if self.config.message_queue_id:
-            return self.message_manager.get_queue(self.config.message_queue_id)
-        return None
-    
-    def add_message_to_history(self, role: str, content: str, **metadata) -> None:
-        """添加消息到历史记录
-        
-        Args:
-            role: 消息角色
-            content: 消息内容
-            **metadata: 额外元数据
-        """
-        queue = self.get_message_queue()
-        if queue:
-            message = Message(
-                role=role,
-                content=content,
-                agent_id=self.config.agent_id,
-                metadata=metadata
-            )
-            queue.update(message)
-    
-    def get_conversation_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        """获取对话历史
-        
-        Args:
-            limit: 限制返回的消息数量
-            
-        Returns:
-            消息字典列表
-        """
-        queue = self.get_message_queue()
-        if queue:
-            messages = queue.get_messages(limit=limit)
-            return [
-                {
-                    "role": msg.role,
-                    "content": msg.content,
-                    "timestamp": msg.timestamp.isoformat(),
-                    "agent_id": msg.agent_id,
-                    "metadata": msg.metadata
-                }
-                for msg in messages
-            ]
-        return []
-    
-    def prepare_system_prompt(self) -> str:
-        """准备系统提示词
-        
-        Returns:
-            处理后的系统提示词
-        """
-        if not self.config.system_prompt:
-            return ""
-        
-        return self.context_engine.prepare_for_llm_interaction(
-            self.config.system_prompt,
-            agent_id=self.config.agent_id
-        )
-    
-    def prepare_messages(self, user_message: str) -> List[Dict[str, Any]]:
-        """准备消息列表
-        
-        Args:
-            user_message: 用户消息
-            
-        Returns:
-            消息列表
-        """
-        messages = []
-        
-        # 添加系统提示
-        system_prompt = self.prepare_system_prompt()
-        if system_prompt:
-            messages.append({
-                "role": "system",
-                "content": system_prompt
-            })
-        
-        # 添加历史记录
-        history = self.get_conversation_history(limit=10)  # 限制历史记录数量
-        for msg in history:
-            if msg["role"] in ["user", "assistant"]:
-                messages.append({
-                    "role": msg["role"],
-                    "content": msg["content"]
-                })
-        
-        # 添加当前用户消息
-        messages.append({
-            "role": "user",
-            "content": user_message
-        })
-        
-        return messages
-    
-    def update_config(self, **kwargs) -> None:
-        """更新配置
-        
-        Args:
-            **kwargs: 配置参数
-        """
-        for key, value in kwargs.items():
-            if hasattr(self.config, key):
-                setattr(self.config, key, value)
-    
-    def get_status(self) -> Dict[str, Any]:
-        """获取Agent状态
-        
-        Returns:
-            状态字典
-        """
-        return {
-            "agent_id": self.config.agent_id,
-            "name": self.config.name,
-            "model": self.config.model,
-            "llm_client_available": self.get_llm_client() is not None,
-            "mcp_client_available": self.get_mcp_client() is not None,
-            "message_queue_available": self.get_message_queue() is not None,
-            "context_variables_count": len(self.context_engine.variables),
-            "conversation_history_count": len(self.get_conversation_history())
-        }
-
-
 class MCPMixin:
     """MCP功能混入类
     
@@ -335,6 +74,9 @@ class MCPMixin:
         self.mcp_toolkits: List[Any] = []
         self.mcp_tools: List[Any] = []
         self._mcp_initialized = False
+        
+        # 初始化MCP管理器
+        self.mcp_manager = get_mcp_client_manager()
         
         # 确保config存在
         if not hasattr(self, 'config'):
@@ -371,6 +113,57 @@ class MCPMixin:
         if not self._mcp_initialized and self.config.mcp_tools:
             await self.initialize_mcp_tools()
             self._mcp_initialized = True
+    
+    def filled_llm_params(self, messages: List[Dict[str, Any]], **kwargs) -> Dict[str, Any]:
+        """准备包含MCP工具的LLM参数
+        
+        Args:
+            messages: 消息列表
+            **kwargs: 其他参数
+            
+        Returns:
+            LLM参数字典
+        """
+        # 调用父类的filled_llm_params
+        llm_params = super().filled_llm_params(messages, **kwargs)
+        
+        # 添加MCP工具到参数中
+        if self.mcp_tools:
+            llm_params["tools"] = self.mcp_tools
+        
+        return llm_params
+    
+    def prepare_messages_with_mcp(self, user_message: str) -> List[Dict[str, Any]]:
+        """准备包含MCP工具的消息列表
+        
+        Args:
+            user_message: 用户消息
+            
+        Returns:
+            消息列表
+        """
+        # 如果是SessionableAgent，调用其prepare_messages方法
+        if hasattr(self, 'prepare_messages'):
+            return self.prepare_messages(user_message)
+        
+        # 否则使用基础的准备逻辑
+        messages = []
+        
+        # 添加系统提示
+        system_prompt = self.prepare_system_prompt()
+        if system_prompt:
+            messages.append({
+                "role": "system",
+                "content": system_prompt
+            })
+        
+        # 添加当前用户消息
+        messages.append({
+            "role": "user",
+            "content": user_message
+        })
+        
+        return messages
     
     async def _execute_tool_call(self, tool_call: Any) -> Any:
         """执行工具调用
@@ -442,6 +235,37 @@ class MCPMixin:
         
         return None
     
+    async def handle_llm_response(self, response: LLMResponse, context: Dict[str, Any]) -> None:
+        """MCP相关的响应处理
+        
+        Args:
+            response: LLM响应
+            **context: 上下文信息
+        """
+        # 处理流式场景中的工具调用
+        if context.get('streaming', False) and context.get('tool_calls_info'):
+            tool_calls_info = context['tool_calls_info']
+            
+            if tool_calls_info.get('tool_calls'):
+                try:
+                    tool_results = []
+                    for tool_call in tool_calls_info['tool_calls']:
+                        tool_result = await self._execute_tool_call(tool_call)
+                        tool_results.append(tool_result)
+                    
+                    # 记录工具执行结果
+                    self.observability.logger.info(
+                        f"Executed {len(tool_results)} tools in streaming mode",
+                        context={"tool_results": tool_results}
+                    )
+                    
+                except Exception as e:
+                    self.observability.logger.error(f"Tool call execution failed during streaming: {e}")
+        
+        # 调用父类的handle_response（如果存在）
+        if hasattr(super(), 'handle_response'):
+            await super().handle_response(response, **context)
+    
     def get_mcp_status(self) -> Dict[str, Any]:
         """获取MCP状态
         
@@ -455,93 +279,209 @@ class MCPMixin:
         }
 
 
-class SimpleAgent(AgentBase, MCPMixin):
+class AgentBase(ABC, MCPMixin, AgentConfig):
+    """Agent抽象基类
+    
+    定义智能体的基本接口和行为规范。继承自MCPMixin，所有Agent都默认支持MCP功能。
+    """
+    
+    def __init__(self,
+                 name: str,
+                 description: str,
+                 system_prompt: str,
+                 llm_client: LLMClientBase,
+                 tools: List[StdioServerParameters]
+                 ):
+        """初始化Agent
+        
+        Args:
+            name: Agent名称
+            description: Agent描述
+            system_prompt: Agent系统提示词
+            llm_client: LLM客户端
+        """
+        self.name = name
+        self.description = description
+        self.system_prompt = system_prompt
+        self.tools = tools
+        self.context_engine = ContextEngine()
+        self.observability = get_observability_manager()
+        
+        # 初始化MCP功能
+        MCPMixin.__init__(self, config)
+        
+        if llm_client is None:
+            raise AgentException("LLM client not available")
+        # 初始化LLM客户端
+        self.llm_client = llm_client
+        
+        # 初始化组件
+        self._initialize_components()
+    
+    @abstractmethod
+    async def process_message(self, message: str, **kwargs) -> LLMResponse:
+        """处理消息的抽象方法
+        
+        Args:
+            message: 输入消息
+            **kwargs: 其他参数
+            
+        Returns:
+            LLM响应
+        """
+        pass
+    
+    @abstractmethod
+    async def stream_process_message(self, message: str, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
+        """流式处理消息的抽象方法
+        
+        Args:
+            message: 输入消息
+            **kwargs: 其他参数
+            
+        Returns:
+            异步生成器，产生流式响应块
+        """
+        pass
+    
+    def _initialize_components(self) -> None:
+        """初始化组件"""
+        # 初始化上下文变量
+        for var_name, var_value in self.config.context_variables.items():
+            self.context_engine.register_variable(var_name, var_value)
+        
+        # 初始化LLM客户端
+        self.llm_client = self.get_llm_client()
+    
+    def filled_llm_params(self, messages: List[Dict[str, Any]], **kwargs) -> Dict[str, Any]:
+        """准备LLM参数
+        
+        Args:
+            messages: 消息列表
+            **kwargs: 其他参数
+            
+        Returns:
+            LLM参数字典
+        """
+        llm_params = {
+            "model": self.config.model,
+            "messages": messages
+        }
+        
+        if self.config.max_tokens:
+            llm_params["max_tokens"] = self.config.max_tokens
+        if self.config.temperature is not None:
+            llm_params["temperature"] = self.config.temperature
+        
+        # 合并额外参数
+        llm_params.update(kwargs)
+        
+        return llm_params
+    
+    async def handle_llm_response(self, response: LLMResponse, context: Dict[str, Any]) -> None:
+        """处理响应，调用所有底层组件的handle_response方法
+        
+        Args:
+            response: LLM响应
+            **context: 上下文信息
+        """
+        if hasattr(response, 'tool_calls') and response.tool_calls:
+            # 首先调用MCPMixin的handle_response
+            await MCPMixin.handle_llm_response(self, response, context)
+    
+    def prepare_system_prompt(self) -> str:
+        """准备系统提示词
+        
+        Returns:
+            处理后的系统提示词
+        """
+        if not self.config.system_prompt:
+            return ""
+        
+        return self.context_engine.render_template(
+            self.config.system_prompt,
+            agent_id=self.config.agent_id
+        )
+    
+    def update_config(self, **kwargs) -> None:
+        """更新配置
+        
+        Args:
+            **kwargs: 配置参数
+        """
+        for key, value in kwargs.items():
+            if hasattr(self.config, key):
+                setattr(self.config, key, value)
+    
+    def get_status(self) -> Dict[str, Any]:
+        """获取Agent状态
+        
+        Returns:
+            状态字典
+        """
+        status = {
+            "agent_id": self.config.agent_id,
+            "name": self.config.name,
+            "model": self.config.model,
+            "llm_client_available": self.get_llm_client() is not None,
+            "context_variables_count": len(self.context_engine.variables)
+        }
+        status.update(self.get_mcp_status())
+        return status
+
+
+class SimpleAgent(AgentBase):
     """简单Agent实现
     
     提供基本的对话功能，支持LLM交互、上下文管理和MCP工具调用。
     """
     
-    def __init__(self, config: AgentConfig):
+    def __init__(self,
+                 name: str,
+                 description: str,
+                 system_prompt: str,
+                 llm_client: LLMClientBase,
+                 tools: List[StdioServerParameters]
+        ):
         """初始化SimpleAgent
         
         Args:
             config: Agent配置
+            llm_client: LLM客户端
+            tools: MCP工具列表
         """
-        AgentBase.__init__(self, config)
-        MCPMixin.__init__(self, config)
-    
+        super().__init__(
+            name=name,
+            description=description,
+            system_prompt=system_prompt,
+            llm_client=llm_client
+        )
+        
     async def process_message(self, message: str, **kwargs) -> LLMResponse:
         """处理消息，支持MCP工具调用"""
         # 验证组件
-        llm_client = self.get_llm_client()
-        if not llm_client:
-            raise AgentException("LLM client not available")
-        
-        try:
-            #CR: 这里使用放进MCPMixin.prepare_messages中，然后下面的prepare_messages再调用底层的prepare_system_prompt
-            # 确保MCP工具已初始化
-            await self._ensure_mcp_initialized()
+        try:            
+            # 准备消息（使用MCPMixin的方法）
+            messages = self.prepare_messages_with_mcp(message)
             
-            # 准备消息
-            messages = self.prepare_messages(message)
+            # 准备LLM参数（使用MCPMixin的filled_llm_params）
+            llm_params = self.filled_llm_params(messages, **kwargs)
             
-            #CR:这里交给llm_client处理,组装消息,调用LLM,处理工具调用
-            # 准备LLM参数
-            llm_params = {
-                "model": self.config.model,
-                "messages": messages
-            }
+            # 调用LLM（现在工具调用逻辑在这里处理）
+            response = await self.llm_client.chat_completion(**llm_params)
             
-            if self.config.max_tokens:
-                llm_params["max_tokens"] = self.config.max_tokens
-            if self.config.temperature is not None:
-                llm_params["temperature"] = self.config.temperature
-            
-            # 添加MCP工具到参数中
-            if self.mcp_tools:
-                llm_params["tools"] = self.mcp_tools
-            
-            # 合并额外参数
-            llm_params.update(kwargs)
-            
-            # 调用LLM
-            response = await llm_client.chat_completion(**llm_params)
-            
-            # 处理工具调用
+            #这里在下面的handle_response中处理
+            # 处理工具调用（如果有的话）
             final_response = await self._handle_tool_calls(response, messages, llm_params)
             if final_response:
-                #这些Context相关的需要新建一个Agent来集成message_queue,context_engine这些，参考README.md
-                # 添加最终响应到历史记录
-                self.add_message_to_history("user", message)
-                self.add_message_to_history("assistant", final_response.content, 
-                                           model=final_response.model, usage=final_response.usage,
-                                           tool_calls=len(response.tool_calls) if hasattr(response, 'tool_calls') else 0)
-                
-                # 更新上下文
-                self.context_engine.post_llm_interaction(final_response)
-                
-                # 调用handle_response处理响应
-                await self.handle_response(final_response, 
-                                         user_message=message, 
-                                         tool_calls=True,
-                                         original_response=response)
-                
-                return final_response
-            
-            #CR 这里也和上面一样，放ContextEngine中处理
-            # 没有工具调用，处理普通响应
-            # 添加消息到历史记录
-            self.add_message_to_history("user", message)
-            self.add_message_to_history("assistant", response.content, 
-                                       model=response.model, usage=response.usage)
+                response = final_response
             
             # 更新上下文
             self.context_engine.post_llm_interaction(response)
             
             # 调用handle_response处理响应
-            await self.handle_response(response, 
-                                     user_message=message, 
-                                     tool_calls=False)
+            await self.handle_llm_response(response, 
+                                     user_message=message)
             
             return response
             
@@ -551,92 +491,181 @@ class SimpleAgent(AgentBase, MCPMixin):
     async def stream_process_message(self, message: str, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
         """流式处理消息，支持MCP工具调用"""
         # 验证组件
-        llm_client = self.get_llm_client()
-        if not llm_client:
-            raise AgentException("LLM client not available")
-        
         try:
             # 确保MCP工具已初始化
             await self._ensure_mcp_initialized()
             
-            # 准备消息
-            messages = self.prepare_messages(message)
+            # 准备消息（使用MCPMixin的方法）
+            messages = self.prepare_messages_with_mcp(message)
             
-            # 准备LLM参数
-            llm_params = {
-                "model": self.config.model,
-                "messages": messages
-            }
-            
-            if self.config.max_tokens:
-                llm_params["max_tokens"] = self.config.max_tokens
-            if self.config.temperature is not None:
-                llm_params["temperature"] = self.config.temperature
-            
-            # 添加MCP工具到参数中
-            if self.mcp_tools:
-                llm_params["tools"] = self.mcp_tools
-            
-            # 合并额外参数
-            llm_params.update(kwargs)
+            # 准备LLM参数（使用MCPMixin的filled_llm_params）
+            llm_params = self.filled_llm_params(messages, **kwargs)
             
             # 流式调用LLM
             accumulated_content = ""
-            tool_calls = []
+            contexts=self.context_engine.get_all_variables()
             
-            async for chunk in llm_client.stream_chat_completion(**llm_params):
+            async for chunk in self.llm_client.stream_chat_completion(**llm_params):
                 accumulated_content += chunk.content
                 
-                # 收集工具调用
-                if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
-                    tool_calls.extend(chunk.tool_calls)
-                
                 yield chunk
-                
-                # 如果是最终块，处理工具调用
-                if chunk.is_final:
-                    if tool_calls:
-                        # 处理工具调用（在流式场景中，工具调用结果可能需要特殊处理）
-                        try:
-                            tool_results = []
-                            for tool_call in tool_calls:
-                                tool_result = await self._execute_tool_call(tool_call)
-                                tool_results.append(tool_result)
-                            
-                            # 添加工具调用结果作为额外的流式响应
-                            tool_result_content = "Tool results: " + "; ".join(str(r) for r in tool_results)
-                            tool_chunk = LLMStreamChunk(
-                                content=tool_result_content,
-                                is_final=True
-                            )
-                            yield tool_chunk
-                            
-                            accumulated_content += tool_result_content
-                        except Exception as e:
-                            self.observability.logger.error(f"Tool call execution failed during streaming: {e}")
-                    
-                    # 添加到历史记录
-                    self.add_message_to_history("user", message)
-                    self.add_message_to_history("assistant", accumulated_content,
-                                               tool_calls=len(tool_calls))
-                    
-                    # 创建模拟响应对象用于上下文更新和handle_response
-                    mock_response = LLMResponse(
+                response = LLMResponse(
                         content=accumulated_content,
                         model=self.config.model,
                         usage={}
-                    )
-                    
-                    self.context_engine.post_llm_interaction(mock_response)
-                    
-                    # 调用handle_response处理响应
-                    await self.handle_response(mock_response, 
-                                             user_message=message, 
-                                             tool_calls=len(tool_calls) > 0,
-                                             streaming=True)
+                )
+                await self.handle_llm_response(response, contexts)
             
         except Exception as e:
             raise AgentException(f"Stream message processing failed: {e}")
+
+
+class SessionableAgent(SimpleAgent):
+    """支持会话的Agent
+    
+    集成message_queue和context_engine，提供完整的会话管理能力。
+    """
+    
+    def __init__(self, config: AgentConfig, message_queue: Optional[MessageQueueBase] = None):
+        """初始化SessionableAgent
+        
+        Args:
+            config: Agent配置
+        """
+        super().__init__(config)
+        if message_queue is None:
+            self.message_queue = InMemoryMessageQueue()
+        else:
+            self.message_queue = message_queue
+    
+    def update_context(self, message: Message) -> None:
+        """添加消息到历史记录
+        
+        Args:
+            role: 消息角色
+            content: 消息内容
+            **metadata: 额外元数据
+        """
+        if self.message_queue:
+            self.message_queue.update(message)
+    
+    def get_conversation_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """获取对话历史
+        
+        Args:
+            limit: 限制返回的消息数量
+            
+        Returns:
+            消息字典列表
+        """
+        if self.message_queue:
+            messages = self.message_queue.get_messages(limit=limit)
+            return [
+                {
+                    "role": msg.role,
+                    "content": msg.content,
+                    "timestamp": msg.timestamp.isoformat(),
+                    "agent_id": msg.agent_id,
+                    "metadata": msg.metadata
+                }
+                for msg in messages
+            ]
+        return []
+    
+    def prepare_messages(self, user_message: str) -> List[Dict[str, Any]]:
+        """准备消息列表
+        
+        Args:
+            user_message: 用户消息
+            
+        Returns:
+            消息列表
+        """
+        messages = []
+        
+        # 添加系统提示
+        system_prompt = self.prepare_system_prompt()
+        if system_prompt:
+            messages.append({
+                "role": "system",
+                "content": system_prompt
+            })
+        
+        # 添加历史记录
+        history = self.get_conversation_history(limit=10)  # 限制历史记录数量
+        for msg in history:
+            if msg["role"] in ["user", "assistant"]:
+                messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"]
+                })
+        
+        # 添加当前用户消息
+        messages.append({
+            "role": "user",
+            "content": user_message
+        })
+        
+        return messages
+    
+    async def process_message(self, message: str, **kwargs) -> LLMResponse:
+        """处理消息，支持会话历史和MCP工具调用"""
+        self.update_context(Message(
+                        role="user",
+                        content=message
+                    ))
+        response = await super().process_message(message, **kwargs)
+        
+        # 添加消息到历史记录
+        self.update_context(Message(
+                        role="assistant",
+                        content=response.content
+                    ))
+        
+        return response
+    
+    async def stream_process_message(self, message: str, **kwargs) -> AsyncGenerator[LLMStreamChunk, None]:
+        """流式处理消息，支持会话历史和MCP工具调用"""
+        accumulated_content = ""
+        tool_calls_count = 0
+        self.update_context(Message(
+                        role="user",
+                        content=message
+                    ))
+        
+        async for chunk in super().stream_process_message(message, **kwargs):
+            accumulated_content += chunk.content
+            
+            # 统计工具调用
+            if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
+                tool_calls_count += len(chunk.tool_calls)
+            
+            yield chunk
+            
+            # 如果是最终块，添加到历史记录
+            if chunk.is_final:
+                self.update_context(Message(
+                        role="assistant",
+                        content=accumulated_content
+                    ))
+    
+    async def handle_llm_response(self, response: LLMResponse, **context) -> None:
+        """处理响应，包括消息队列处理
+        
+        Args:
+            response: LLM响应
+            **context: 上下文信息
+        """
+        # 调用父类的handle_response
+        await super().handle_llm_response(response, **context)
+        
+        # 调用消息队列的handle_response
+        message_queue = self.message_queue
+        if message_queue and hasattr(message_queue, 'handle_response'):
+            try:
+                await message_queue.handle_response(response, **context)
+            except Exception as e:
+                self.observability.logger.warning(f"Message queue handle_response failed: {e}")
     
     def get_status(self) -> Dict[str, Any]:
         """获取Agent状态
@@ -645,25 +674,11 @@ class SimpleAgent(AgentBase, MCPMixin):
             状态字典
         """
         status = super().get_status()
-        status.update(self.get_mcp_status())
+        status.update({
+            "message_queue_available": self.message_queue is not None,
+            "conversation_history_count": len(self.get_conversation_history())
+        })
         return status
-
-
-class MCPAgent(SimpleAgent):
-    """支持MCP的Agent（保留向后兼容性）
-    
-    现在SimpleAgent已经集成了MCP功能，MCPAgent保留作为别名。
-    """
-    
-    def __init__(self, config: AgentConfig):
-        """初始化MCPAgent
-        
-        Args:
-            config: Agent配置
-        """
-        super().__init__(config)
-        self.observability.logger.info("MCPAgent is now equivalent to SimpleAgent with MCP support")
-
 
 class AgentManager:
     """Agent管理器
@@ -680,7 +695,7 @@ class AgentManager:
         
         Args:
             config: Agent配置
-            agent_type: Agent类型 ("simple" 或 "mcp")
+            agent_type: Agent类型 ("simple", "sessionable")
             
         Returns:
             Agent实例
@@ -694,8 +709,8 @@ class AgentManager:
         # 创建Agent实例
         if agent_type == "simple":
             agent = SimpleAgent(config)
-        elif agent_type == "mcp":
-            agent = MCPAgent(config)
+        elif agent_type == "sessionable":
+            agent = SessionableAgent(config)
         else:
             raise AgentException(f"Unsupported agent type: {agent_type}")
         
