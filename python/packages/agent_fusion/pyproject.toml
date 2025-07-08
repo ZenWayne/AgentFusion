@@ -15,7 +15,6 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "ag2[openai,mcp]",
     "chainlit>=2.6.0"
 ]
 

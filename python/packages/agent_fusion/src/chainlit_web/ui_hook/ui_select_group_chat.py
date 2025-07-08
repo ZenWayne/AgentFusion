@@ -26,6 +26,7 @@ from autogen_agentchat.messages import (
 import chainlit as cl
 from builders.group_chat_builder import GroupChatBuilder as GroupChatBuilderBase
 from autogen_core.models import ChatCompletionClient
+from autogen_core import SingleThreadedAgentRuntime
 
 ## ref from python\packages\autogen-core\src\autogen_core\_message_context.py
 
@@ -88,6 +89,7 @@ class UISelectorGroupChatManager(SelectorGroupChatManager):
             model_client_streaming,
         )
         self.streaming_event = False
+        self._participant_name_to_topic_type
         self._response : cl.Message | None = None
 
     #RECORD first parameter name must be message
@@ -96,7 +98,10 @@ class UISelectorGroupChatManager(SelectorGroupChatManager):
         """Handle a start event by sending the response to the user."""
         await super().handle_group_chat_message(message, ctx)
         inner_message : BaseAgentEvent | BaseTextChatMessage = message.message
-        if ctx.sender.type.startswith("user"):
+        runtime : SingleThreadedAgentRuntime = self._runtime
+        sender_agent: UISelectorGroupChatAgentChatContainer = await runtime._get_agent(ctx.sender)
+        agent_name = sender_agent._agent.name
+        if agent_name == "user":
             return
         if isinstance(inner_message, TextMessage):
             # Check if the message is from a user - if so, skip streaming
@@ -111,7 +116,7 @@ class UISelectorGroupChatManager(SelectorGroupChatManager):
         elif isinstance(inner_message, ModelClientStreamingChunkEvent):
             if self.streaming_event == False:
                 self.streaming_event = True
-                self._response = cl.Message(content="")                
+                self._response = cl.Message(author=agent_name, content="")                
             await self._response.stream_token(inner_message.to_text())
         elif isinstance(inner_message, BaseAgentEvent):
             pass
