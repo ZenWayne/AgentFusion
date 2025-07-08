@@ -1,13 +1,31 @@
 {
     "prompt_root": "config/prompt",
     "mcpServers": {
-        "file_system": {
+        "file_system_windows": {
             "command": "node",
             "args": [
                 "${userHome}\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-filesystem\\dist\\index.js", 
                 "${cwd}"
             ],
             "env": {}
+        },
+        "file_system_unix": {
+            "command": "npx",
+            "args": [
+                "@modelcontextprotocol/server-filesystem", 
+                "${cwd}"
+            ],
+            "env": {}
+        },
+        "file_system": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-filesystem", 
+                "${cwd}"
+            ],
+            "env": {},
+            "read_timeout_seconds": 10
         }
     },
     "agents": {

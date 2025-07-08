@@ -87,7 +87,8 @@ class UISelectorGroupChatManager(SelectorGroupChatManager):
             model_context,
             model_client_streaming,
         )
-        self._response = cl.Message(content="")
+        self.streaming_event = False
+        self._response : cl.Message | None = None
 
     #RECORD first parameter name must be message
     @event
@@ -95,17 +96,22 @@ class UISelectorGroupChatManager(SelectorGroupChatManager):
         """Handle a start event by sending the response to the user."""
         await super().handle_group_chat_message(message, ctx)
         inner_message : BaseAgentEvent | BaseTextChatMessage = message.message
-        inner_message.source = "user"
-        if inner_message.source == "user":
+        if ctx.sender.type.startswith("user"):
             return
-        if isinstance(inner_message, BaseTextChatMessage):
+        if isinstance(inner_message, TextMessage):
             # Check if the message is from a user - if so, skip streaming
             # Only stream messages from AI agents, not from human users
             if self._model_client_streaming == False:
+                self._response = cl.Message(content="")
                 await self._response.stream_token(inner_message.content)
                 await self._response.update()
+            else:
+                self.streaming_event = False
             await self._response.send()
         elif isinstance(inner_message, ModelClientStreamingChunkEvent):
+            if self.streaming_event == False:
+                self.streaming_event = True
+                self._response = cl.Message(content="")                
             await self._response.stream_token(inner_message.to_text())
         elif isinstance(inner_message, BaseAgentEvent):
             pass
@@ -115,7 +121,7 @@ class UISelectorGroupChatManager(SelectorGroupChatManager):
         """Handle an agent response event by passing the messages in the buffer
         to the delegate agent and publish the response."""
         await super().handle_agent_response(message, ctx)
-        await self._response.send()
+        #await self._response.send()
 
 
 class UISelectorGroupChatAgentChatContainer(ChatAgentContainer):
@@ -185,19 +191,22 @@ class UISelectorGroupChat(SelectorGroupChat):
             UISelectorGroupChatAgentChatContainer(parent_topic_type, output_topic_type, agent, message_factory)
 
 class UISelectorGroupChatBuilder(GroupChatBuilderBase):
-    def __init__(self, prompt_root: str, input_func: Callable[[str], Awaitable[str]] | None = input):
+    def __init__(self, prompt_root: str, input_func: Callable[[str], Awaitable[str]] | None = input, model_client_streaming: bool = False):
         super().__init__(prompt_root, input_func)
+        self._model_client_streaming = model_client_streaming
 
     def _create_selector_group_chat(
         self, 
         participants: list[ChatAgent],
         selector_prompt: str,
         model_client: ChatCompletionClient,
+        model_client_streaming: bool = False,
     ) -> Callable[[], SelectorGroupChat]:
         return lambda: UISelectorGroupChat(
             participants=participants,
             selector_prompt=selector_prompt,
-            model_client=model_client
+            model_client=model_client,
+            model_client_streaming=self._model_client_streaming
         )
 
 

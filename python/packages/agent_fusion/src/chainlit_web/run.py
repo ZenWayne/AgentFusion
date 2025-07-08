@@ -3,7 +3,7 @@ import chainlit as cl
 from chainlit import Message
 from schemas import ComponentType, Component
 import dataclasses
-from typing import Dict
+from typing import Dict, cast
 
 from builders import GraphFlowBuilder
 from builders import load_info
@@ -14,6 +14,7 @@ from chainlit_web.ui_hook.ui_select_group_chat import (
 from autogen_agentchat.teams import BaseGroupChat
 from autogen_core import CancellationToken
 from autogen_agentchat.ui import Console
+from aglogger import enable_logger, FilterType
 
 
 # TODO: Import get_weather function from appropriate module
@@ -33,8 +34,18 @@ message_chunks: Dict[str, Message] = {}
 
 async def wrap_input(prompt: str, token: CancellationToken) -> str:
     message_queue = cast(asyncio.Queue[str], cl.user_session.get("message_queue"))  # type: ignore
+    print(f"message_queue: {message_queue}")
+    ready = cast(bool, cl.user_session.get("ready"))
+    print(f"ready: {ready}")
+    if not ready:
+        cl.user_session.set("ready", True)
     message = await message_queue.get()
     return message
+
+@cl.on_app_startup
+async def on_app_startup() -> None:
+    enable_logger(["autogen_core.events"], filter_types=[FilterType.ToolCall, FilterType.LLMCall])
+    print("on_app_startup")
 
 @cl.on_chat_start  # type: ignore
 async def start_chat() -> None:
@@ -48,7 +59,11 @@ async def start_chat() -> None:
         #TODO
         pass
     elif component_config.type == ComponentType.GROUP_CHAT:
-        groupchat_builder = UISelectorGroupChatBuilder(prompt_root=builders_utils.prompt_root, input_func=wrap_input)
+        groupchat_builder = UISelectorGroupChatBuilder(
+            prompt_root=builders_utils.prompt_root, 
+            input_func=wrap_input,
+            model_client_streaming=True
+            )
         groupchat_factory_func = {
             ComponentType.GROUP_CHAT: groupchat_builder.build,
             ComponentType.GRAPH_FLOW: GraphFlowBuilder
@@ -65,12 +80,17 @@ async def start_chat() -> None:
         groupchat:BaseGroupChat = await async_context_manager.__aenter__()
         
         try:
-            asyncio.create_task(Console(groupchat.run_stream()))
+            message_queue = asyncio.Queue()
+            cl.user_session.set("message_queue", message_queue)
             cl.user_session.set("groupchat", groupchat)  # type: ignore
             # Store the context manager for later exit
             cl.user_session.set("groupchat_context", async_context_manager)  # type: ignore
-            message_queue = asyncio.Queue()
-            cl.user_session.set("message_queue", message_queue)
+            asyncio.create_task(Console(groupchat.run_stream()))
+            cl.user_session.set("ready",False)
+            #sync the ready flag
+            while not cl.user_session.get("ready"):
+                await asyncio.sleep(0.5)
+            
         except Exception as e:
             # If something goes wrong, make sure to exit the context
             await async_context_manager.__aexit__(type(e), e, e.__traceback__)

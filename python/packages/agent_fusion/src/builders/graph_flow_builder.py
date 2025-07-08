@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager, AsyncExitStack
 import asyncio
 import json
 from schemas.graph_flow import ComponentInfo, GraphFlowConfig
-from .utils import GraphFlowInfo
+from builders.utils import GraphFlowInfo
 
 @asynccontextmanager
 async def GraphFlowBuilder(name: str) -> AsyncGenerator[GraphFlow, None]:
