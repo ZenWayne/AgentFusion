@@ -15,7 +15,10 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "chainlit>=2.6.0"
+    "chainlit>=2.6.0",
+    "bcrypt>=4.0.0",
+    "asyncpg>=0.29.0",
+    "sqlalchemy>=2.0.0"
 ]
 
 [tool.setuptools.packages.find]
