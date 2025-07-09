@@ -16,6 +16,7 @@ from autogen_core import CancellationToken
 from autogen_agentchat.ui import Console
 from aglogger import enable_logger, FilterType
 from chainlit.input_widget import Select, Switch, Slider
+from chainlit_web import user
 
 
 # TODO: Import get_weather function from appropriate module

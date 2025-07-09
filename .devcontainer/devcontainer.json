@@ -1,0 +1,77 @@
+{
+    "name": "AgentFusion Development Environment",
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "app",
+    "workspaceFolder": "/workspace",
+    "shutdownAction": "stopCompose",
+    
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.black-formatter",
+                "ms-python.flake8",
+                "ms-python.mypy-type-checker",
+                "ms-python.pylint",
+                "ms-vscode.vscode-json",
+                "redhat.vscode-yaml",
+                "ms-vscode.vscode-docker",
+                "ms-azuretools.vscode-docker",
+                "ms-vscode.vscode-git-graph",
+                "ms-vscode.vscode-markdown-math",
+                "ms-python.debugpy",
+                "ms-toolsai.jupyter",
+                "ms-toolsai.jupyter-keymap",
+                "ms-toolsai.jupyter-renderers",
+                "ms-toolsai.vscode-jupyter-cell-tags",
+                "ms-toolsai.vscode-jupyter-slideshow"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/usr/local/bin/python",
+                "python.linting.enabled": true,
+                "python.linting.pylintEnabled": true,
+                "python.linting.flake8Enabled": true,
+                "python.formatting.provider": "black",
+                "python.formatting.blackArgs": ["--line-length", "88"],
+                "python.testing.pytestEnabled": true,
+                "python.testing.unittestEnabled": false,
+                "python.testing.pytestArgs": ["tests/"],
+                "files.associations": {
+                    "*.md": "markdown"
+                },
+                "terminal.integrated.shell.linux": "/bin/bash"
+            }
+        }
+    },
+    
+    "forwardPorts": [8000, 8001, 5432, 6379, 5050],
+    "portsAttributes": {
+        "8000": {
+            "label": "Chainlit App",
+            "onAutoForward": "notify"
+        },
+        "8001": {
+            "label": "Alternative App Port",
+            "onAutoForward": "notify"
+        },
+        "5432": {
+            "label": "PostgreSQL",
+            "onAutoForward": "silent"
+        },
+        "6379": {
+            "label": "Redis",
+            "onAutoForward": "silent"
+        },
+        "5050": {
+            "label": "pgAdmin",
+            "onAutoForward": "notify"
+        }
+    },
+    
+    "postCreateCommand": "bash -c 'cd /workspace && pip install -e python/packages/agent_fusion/ && pip install -e python/packages/agent_fusion_agent/'",
+    
+    "remoteUser": "devuser",
+    "features": {
+        "ghcr.io/devcontainers/features/git:1": {}
+    }
+} 

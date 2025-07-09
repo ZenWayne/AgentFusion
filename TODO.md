@@ -36,3 +36,10 @@ graph_flow 多个agent以固定工作流的方式来完成任务
 使用group_chat来实现论文数据分割载入，并通过rag agent查询知识点
 
 
+#TODO
+1.用户鉴权
+2.记忆功能
+3.多agent切换
+
+
+
