@@ -10,14 +10,15 @@ import getpass
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import asyncpg
-from auth import DatabaseAuth
+from ..data_layer.data_layer import AgentFusionDataLayer, AgentFusionUser
 
 
 class UserManager:
     """User management utility class"""
     
     def __init__(self, database_url: str):
-        self.db_auth = DatabaseAuth(database_url)
+        # AgentFusionDataLayer now uses database_url directly (inherits from ChainlitDataLayer)
+        self.data_layer = AgentFusionDataLayer(database_url=database_url)
         self.database_url = database_url
     
     async def get_db_connection(self):
@@ -52,15 +53,19 @@ class UserManager:
         last_name = input("Last Name (optional): ").strip() or None
         
         try:
-            user_id = await self.db_auth.create_user(
-                username=username,
+            # Create AgentFusionUser instance
+            user = AgentFusionUser(
+                identifier=username,
                 email=email,
                 password=password,
                 role=role,
                 first_name=first_name,
                 last_name=last_name
             )
-            print(f"✅ User created successfully with ID: {user_id}")
+            
+            # Use base class create_user method
+            persisted_user = await self.data_layer.create_user(user)
+            print(f"✅ User created successfully with ID: {persisted_user.id}")
             
         except Exception as e:
             print(f"❌ Error creating user: {e}")
@@ -71,10 +76,14 @@ class UserManager:
         
         for user_data in users_data:
             try:
-                user_id = await self.db_auth.create_user(**user_data)
-                print(f"✅ Created user '{user_data['username']}' with ID: {user_id}")
+                # Create AgentFusionUser instance
+                user = AgentFusionUser(**user_data)
+                
+                # Use base class create_user method
+                persisted_user = await self.data_layer.create_user(user)
+                print(f"✅ Created user '{user.identifier}' with ID: {persisted_user.id}")
             except Exception as e:
-                print(f"❌ Failed to create user '{user_data['username']}': {e}")
+                print(f"❌ Failed to create user '{user_data.get('identifier', 'unknown')}': {e}")
     
     async def list_users(self):
         """List all users"""
@@ -128,7 +137,7 @@ class UserManager:
                     return
             
             # Hash new password
-            password_hash = await self.db_auth.hash_password(new_password)
+            password_hash = await self.data_layer.hash_password(new_password)
             
             # Update password and reset security fields
             update_query = """
@@ -141,7 +150,7 @@ class UserManager:
             await conn.execute(update_query, password_hash, username)
             
             # Log password reset
-            await self.db_auth.log_activity(conn, user['id'], "password_reset", details={
+            await self.data_layer.log_activity(conn, user['id'], "password_reset", details={
                 "username": username,
                 "reset_by": "admin"
             })
@@ -179,7 +188,7 @@ class UserManager:
             
             # Log status change
             action = "activated" if active else "deactivated"
-            await self.db_auth.log_activity(conn, user['id'], f"user_{action}", details={
+            await self.data_layer.log_activity(conn, user['id'], f"user_{action}", details={
                 "username": username,
                 "changed_by": "admin"
             })
@@ -215,7 +224,7 @@ class UserManager:
             await conn.execute(update_query, username)
             
             # Log unlock
-            await self.db_auth.log_activity(conn, user['id'], "user_unlocked", details={
+            await self.data_layer.log_activity(conn, user['id'], "user_unlocked", details={
                 "username": username,
                 "unlocked_by": "admin"
             })
@@ -283,10 +292,10 @@ async def main():
             await user_manager.unlock_user(username)
         
         elif command == "create-defaults":
-            # Create default users
+            # Create default users using AgentFusionUser
             default_users = [
                 {
-                    "username": "admin",
+                    "identifier": "admin",
                     "email": "admin@agentfusion.com",
                     "password": "admin123!",
                     "role": "admin",
@@ -294,7 +303,7 @@ async def main():
                     "last_name": "Administrator"
                 },
                 {
-                    "username": "demo",
+                    "identifier": "demo",
                     "email": "demo@agentfusion.com", 
                     "password": "demo123!",
                     "role": "user",

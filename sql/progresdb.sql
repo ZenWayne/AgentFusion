@@ -36,6 +36,7 @@ CREATE TABLE component_types (
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(100) NOT NULL UNIQUE,
+    identifier VARCHAR(100) NOT NULL UNIQUE, -- For Chainlit compatibility
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     first_name VARCHAR(100),
@@ -305,6 +306,7 @@ CREATE TABLE prompt_change_history (
 
 -- Users indexes
 CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_identifier ON users(identifier);
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_role ON users(role);
 CREATE INDEX idx_users_active ON users(is_active);
@@ -553,14 +555,14 @@ CREATE TRIGGER auto_log_model_client_activity
 -- ================================================
 
 -- Insert system user first (for self-referencing foreign key)
-INSERT INTO users (username, email, password_hash, first_name, last_name, role, is_active, is_verified) VALUES 
-    ('system', 'system@agentfusion.local', '$2b$12$dummy_hash_for_system_user', 'System', 'User', 'system', TRUE, TRUE);
+INSERT INTO users (username, identifier, email, password_hash, first_name, last_name, role, is_active, is_verified) VALUES 
+    ('system', 'system', 'system@agentfusion.local', '$2b$12$dummy_hash_for_system_user', 'System', 'User', 'system', TRUE, TRUE);
 
 -- Insert sample users
-INSERT INTO users (username, email, password_hash, first_name, last_name, role, is_active, is_verified, email_verified_at, timezone, language, created_by) VALUES 
-    ('admin', 'admin@agentfusion.local', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewrJETPnNP5bRaQy', 'Admin', 'User', 'admin', TRUE, TRUE, CURRENT_TIMESTAMP, 'UTC', 'en', 1),
-    ('developer', 'dev@agentfusion.local', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewrJETPnNP5bRaQy', 'Developer', 'User', 'developer', TRUE, TRUE, CURRENT_TIMESTAMP, 'UTC', 'en', 1),
-    ('reviewer', 'reviewer@agentfusion.local', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewrJETPnNP5bRaQy', 'Reviewer', 'User', 'reviewer', TRUE, TRUE, CURRENT_TIMESTAMP, 'UTC', 'en', 1);
+INSERT INTO users (username, identifier, email, password_hash, first_name, last_name, role, is_active, is_verified, email_verified_at, timezone, language, created_by) VALUES 
+    ('admin', 'admin', 'admin@agentfusion.local', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewrJETPnNP5bRaQy', 'Admin', 'User', 'admin', TRUE, TRUE, CURRENT_TIMESTAMP, 'UTC', 'en', 1),
+    ('developer', 'developer', 'dev@agentfusion.local', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewrJETPnNP5bRaQy', 'Developer', 'User', 'developer', TRUE, TRUE, CURRENT_TIMESTAMP, 'UTC', 'en', 1),
+    ('reviewer', 'reviewer', 'reviewer@agentfusion.local', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewrJETPnNP5bRaQy', 'Reviewer', 'User', 'reviewer', TRUE, TRUE, CURRENT_TIMESTAMP, 'UTC', 'en', 1);
 
 -- Insert sample user preferences
 INSERT INTO user_preferences (user_id, preference_key, preference_value, category, description) VALUES 
@@ -862,10 +864,10 @@ DECLARE
     v_user_id INTEGER;
 BEGIN
     INSERT INTO users (
-        username, email, password_hash, first_name, last_name, 
+        username, identifier, email, password_hash, first_name, last_name, 
         role, is_active, is_verified, created_by
     ) VALUES (
-        p_username, p_email, p_password_hash, p_first_name, p_last_name,
+        p_username, p_username, p_email, p_password_hash, p_first_name, p_last_name,
         p_role, TRUE, FALSE, p_created_by_id
     ) RETURNING id INTO v_user_id;
     
@@ -1302,6 +1304,7 @@ $$ LANGUAGE plpgsql;
 -- ================================================
 
 COMMENT ON TABLE users IS 'User accounts with authentication and role management';
+COMMENT ON COLUMN users.identifier IS 'Unique identifier for Chainlit compatibility (usually same as username)';
 COMMENT ON TABLE password_reset_tokens IS 'Secure tokens for password reset functionality';
 COMMENT ON TABLE user_sessions IS 'User login sessions with device and location tracking';
 COMMENT ON TABLE user_preferences IS 'User-specific application preferences and settings';
