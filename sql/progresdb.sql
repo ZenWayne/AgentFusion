@@ -18,7 +18,7 @@ DROP TABLE IF EXISTS prompts CASCADE;
 DROP TABLE IF EXISTS agents CASCADE;
 DROP TABLE IF EXISTS model_clients CASCADE;
 DROP TABLE IF EXISTS component_types CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS "User" CASCADE;
 
 -- ================================================
 -- Core Tables
@@ -33,7 +33,7 @@ CREATE TABLE component_types (
 );
 
 -- Users table
-CREATE TABLE users (
+CREATE TABLE "User" (
     id SERIAL PRIMARY KEY,
     username VARCHAR(100) NOT NULL UNIQUE,
     identifier VARCHAR(100) NOT NULL UNIQUE, -- For Chainlit compatibility
@@ -55,14 +55,14 @@ CREATE TABLE users (
     metadata JSONB, -- Store additional user preferences, settings, etc.
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by INTEGER REFERENCES users(id),
+    created_by INTEGER REFERENCES "User"(id),
     CONSTRAINT check_role CHECK (role IN ('user', 'admin', 'reviewer', 'developer', 'system'))
 );
 
 -- Password reset tokens table
 CREATE TABLE password_reset_tokens (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
     token VARCHAR(255) NOT NULL UNIQUE,
     token_hash VARCHAR(255) NOT NULL, -- Store hashed version for security
     expires_at TIMESTAMP NOT NULL,
@@ -75,7 +75,7 @@ CREATE TABLE password_reset_tokens (
 -- User sessions table
 CREATE TABLE user_sessions (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
     session_token VARCHAR(255) NOT NULL UNIQUE,
     refresh_token VARCHAR(255),
     ip_address INET,
@@ -91,7 +91,7 @@ CREATE TABLE user_sessions (
 -- User preferences table
 CREATE TABLE user_preferences (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
     preference_key VARCHAR(100) NOT NULL,
     preference_value JSONB NOT NULL,
     category VARCHAR(50) DEFAULT 'general', -- ui, notification, security, etc.
@@ -104,7 +104,7 @@ CREATE TABLE user_preferences (
 -- User API keys table
 CREATE TABLE user_api_keys (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL, -- User-friendly name for the key
     key_prefix VARCHAR(20) NOT NULL, -- First few chars for identification
     key_hash VARCHAR(255) NOT NULL, -- Hashed API key
@@ -123,7 +123,7 @@ CREATE TABLE user_api_keys (
 -- User activity logs table
 CREATE TABLE user_activity_logs (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    user_id INTEGER REFERENCES "User"(id) ON DELETE SET NULL,
     activity_type VARCHAR(50) NOT NULL, -- login, logout, create, update, delete, etc.
     resource_type VARCHAR(50), -- agent, prompt, model_client, etc.
     resource_id INTEGER, -- ID of the affected resource
@@ -141,7 +141,7 @@ CREATE TABLE user_activity_logs (
 CREATE TABLE threads (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
     user_identifier TEXT, -- Legacy compatibility field
     tags TEXT[],
     metadata JSONB DEFAULT '{}',
@@ -202,7 +202,7 @@ CREATE TABLE feedbacks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     for_id UUID NOT NULL, -- Can reference steps, elements, etc.
     thread_id UUID NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
-    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    user_id INTEGER REFERENCES "User"(id) ON DELETE SET NULL,
     value INTEGER NOT NULL, -- Rating value (e.g., 1-5, -1/1, etc.)
     comment TEXT,
     feedback_type VARCHAR(50) DEFAULT 'rating', -- rating, thumbs, stars, etc.
@@ -227,8 +227,8 @@ CREATE TABLE model_clients (
     config JSONB, -- Store full configuration
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by INTEGER REFERENCES users(id),
-    updated_by INTEGER REFERENCES users(id),
+    created_by INTEGER REFERENCES "User"(id),
+    updated_by INTEGER REFERENCES "User"(id),
     is_active BOOLEAN DEFAULT TRUE
 );
 
@@ -246,8 +246,8 @@ CREATE TABLE agents (
     config JSONB, -- Store agent configuration
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by INTEGER REFERENCES users(id),
-    updated_by INTEGER REFERENCES users(id),
+    created_by INTEGER REFERENCES "User"(id),
+    updated_by INTEGER REFERENCES "User"(id),
     is_active BOOLEAN DEFAULT TRUE
 );
 
@@ -260,8 +260,8 @@ CREATE TABLE prompts (
     subcategory VARCHAR(100), -- e.g., 'prd_pt', 'ui_designer_pt'
     description TEXT,
     agent_id INTEGER REFERENCES agents(id),
-    created_by INTEGER REFERENCES users(id),
-    updated_by INTEGER REFERENCES users(id),
+    created_by INTEGER REFERENCES "User"(id),
+    updated_by INTEGER REFERENCES "User"(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     is_active BOOLEAN DEFAULT TRUE
@@ -277,9 +277,9 @@ CREATE TABLE prompt_versions (
     content_hash VARCHAR(64), -- SHA256 hash of content for integrity
     metadata JSONB, -- Store template variables, parameters, etc.
     status VARCHAR(50) DEFAULT 'draft', -- draft, review, approved, deprecated
-    created_by INTEGER REFERENCES users(id),
+    created_by INTEGER REFERENCES "User"(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    approved_by INTEGER REFERENCES users(id),
+    approved_by INTEGER REFERENCES "User"(id),
     approved_at TIMESTAMP,
     is_current BOOLEAN DEFAULT FALSE,
     UNIQUE(prompt_id, version_number)
@@ -294,7 +294,7 @@ CREATE TABLE prompt_change_history (
     old_content TEXT, -- Previous content (for updates)
     new_content TEXT, -- New content (for updates)
     diff_info JSONB, -- Store detailed diff information
-    changed_by INTEGER REFERENCES users(id),
+    changed_by INTEGER REFERENCES "User"(id),
     changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     change_reason TEXT,
     metadata JSONB -- Additional change context
@@ -305,14 +305,14 @@ CREATE TABLE prompt_change_history (
 -- ================================================
 
 -- Users indexes
-CREATE INDEX idx_users_username ON users(username);
-CREATE INDEX idx_users_identifier ON users(identifier);
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_role ON users(role);
-CREATE INDEX idx_users_active ON users(is_active);
-CREATE INDEX idx_users_created_at ON users(created_at);
-CREATE INDEX idx_users_timezone ON users(timezone);
-CREATE INDEX idx_users_language ON users(language);
+CREATE INDEX idx_users_username ON User(username);
+CREATE INDEX idx_users_identifier ON User(identifier);
+CREATE INDEX idx_users_email ON User(email);
+CREATE INDEX idx_users_role ON User(role);
+CREATE INDEX idx_users_active ON User(is_active);
+CREATE INDEX idx_users_created_at ON User(created_at);
+CREATE INDEX idx_users_timezone ON User(timezone);
+CREATE INDEX idx_users_language ON User(language);
 
 -- Password reset tokens indexes
 CREATE INDEX idx_password_reset_tokens_user_id ON password_reset_tokens(user_id);
@@ -423,7 +423,7 @@ END;
 $$ language 'plpgsql';
 
 -- Triggers for updated_at
-CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON "User" FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_user_preferences_updated_at BEFORE UPDATE ON user_preferences FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_user_api_keys_updated_at BEFORE UPDATE ON user_api_keys FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_threads_updated_at BEFORE UPDATE ON threads FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -555,14 +555,14 @@ CREATE TRIGGER auto_log_model_client_activity
 -- ================================================
 
 -- Insert system user first (for self-referencing foreign key)
-INSERT INTO users (username, identifier, email, password_hash, first_name, last_name, role, is_active, is_verified) VALUES 
+INSERT INTO "User" (username, identifier, email, password_hash, first_name, last_name, role, is_active, is_verified) VALUES 
     ('system', 'system', 'system@agentfusion.local', '$2b$12$dummy_hash_for_system_user', 'System', 'User', 'system', TRUE, TRUE);
 
 -- Insert sample users
-INSERT INTO users (username, identifier, email, password_hash, first_name, last_name, role, is_active, is_verified, email_verified_at, timezone, language, created_by) VALUES 
-    ('admin', 'admin', 'admin@agentfusion.local', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewrJETPnNP5bRaQy', 'Admin', 'User', 'admin', TRUE, TRUE, CURRENT_TIMESTAMP, 'UTC', 'en', 1),
-    ('developer', 'developer', 'dev@agentfusion.local', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewrJETPnNP5bRaQy', 'Developer', 'User', 'developer', TRUE, TRUE, CURRENT_TIMESTAMP, 'UTC', 'en', 1),
-    ('reviewer', 'reviewer', 'reviewer@agentfusion.local', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewrJETPnNP5bRaQy', 'Reviewer', 'User', 'reviewer', TRUE, TRUE, CURRENT_TIMESTAMP, 'UTC', 'en', 1);
+INSERT INTO "User" (username, identifier, email, password_hash, first_name, last_name, role, is_active, is_verified, email_verified_at, timezone, language, created_by) VALUES 
+    ('admin', 'admin', 'admin@agentfusion.local', '$2b$12$u7aV8xnkMhUZuj9qh1QoauZp4JIF1Aa4s1kWclyCZzVyhmyugzCNW', 'Admin', 'User', 'admin', TRUE, TRUE, CURRENT_TIMESTAMP, 'UTC', 'en', 1),
+    ('developer', 'developer', 'dev@agentfusion.local', '$2b$12$u7aV8xnkMhUZuj9qh1QoauZp4JIF1Aa4s1kWclyCZzVyhmyugzCNW', 'Developer', 'User', 'developer', TRUE, TRUE, CURRENT_TIMESTAMP, 'UTC', 'en', 1),
+    ('reviewer', 'reviewer', 'reviewer@agentfusion.local', '$2b$12$u7aV8xnkMhUZuj9qh1QoauZp4JIF1Aa4s1kWclyCZzVyhmyugzCNW', 'Reviewer', 'User', 'reviewer', TRUE, TRUE, CURRENT_TIMESTAMP, 'UTC', 'en', 1);
 
 -- Insert sample user preferences
 INSERT INTO user_preferences (user_id, preference_key, preference_value, category, description) VALUES 
@@ -641,7 +641,7 @@ SELECT
     COUNT(CASE WHEN ual.created_at >= CURRENT_TIMESTAMP - INTERVAL '7 days' THEN 1 END) as activities_last_week,
     MAX(ual.created_at) as last_activity,
     COUNT(CASE WHEN ual.status = 'failure' THEN 1 END) as failed_activities
-FROM users u
+FROM "User" u
 LEFT JOIN user_activity_logs ual ON u.id = ual.user_id
 WHERE u.is_active = TRUE
 GROUP BY u.id, u.username, u.first_name, u.last_name;
@@ -661,7 +661,7 @@ SELECT
     us.created_at as session_started,
     us.expires_at
 FROM user_sessions us
-JOIN users u ON us.user_id = u.id
+JOIN "User" u ON us.user_id = u.id
 WHERE us.is_active = TRUE 
     AND us.expires_at > CURRENT_TIMESTAMP
 ORDER BY us.last_activity DESC;
@@ -685,7 +685,7 @@ SELECT
     END as status,
     uak.permissions
 FROM user_api_keys uak
-JOIN users u ON uak.user_id = u.id
+JOIN "User" u ON uak.user_id = u.id
 ORDER BY u.username, uak.created_at DESC;
 
 -- View for conversation threads with stats
@@ -705,7 +705,7 @@ SELECT
     t.created_at,
     t.is_active
 FROM threads t
-JOIN users u ON t.user_id = u.id
+JOIN "User" u ON t.user_id = u.id
 LEFT JOIN steps s ON t.id = s.thread_id
 LEFT JOIN elements e ON t.id = e.thread_id
 LEFT JOIN feedbacks f ON t.id = f.thread_id
@@ -736,7 +736,7 @@ SELECT
     END as duration_seconds
 FROM steps s
 JOIN threads t ON s.thread_id = t.id
-JOIN users u ON t.user_id = u.id
+JOIN "User" u ON t.user_id = u.id
 ORDER BY s.thread_id, s.created_at;
 
 -- View for element attachments
@@ -757,7 +757,7 @@ SELECT
 FROM elements e
 LEFT JOIN threads t ON e.thread_id = t.id
 LEFT JOIN steps s ON e.step_id = s.id
-LEFT JOIN users u ON t.user_id = u.id
+LEFT JOIN "User" u ON t.user_id = u.id
 WHERE e.is_active = TRUE
 ORDER BY e.created_at DESC;
 
@@ -774,7 +774,7 @@ SELECT
     MAX(f.value) as max_rating,
     COUNT(CASE WHEN f.comment IS NOT NULL THEN 1 END) as comments_count
 FROM threads t
-JOIN users u ON t.user_id = u.id
+JOIN "User" u ON t.user_id = u.id
 LEFT JOIN feedbacks f ON t.id = f.thread_id
 GROUP BY t.id, t.name, u.username, f.feedback_type
 ORDER BY avg_rating DESC;
@@ -801,8 +801,8 @@ SELECT
 FROM prompts p
 JOIN prompt_versions pv ON p.id = pv.prompt_id
 LEFT JOIN agents a ON p.agent_id = a.id
-LEFT JOIN users u1 ON pv.created_by = u1.id
-LEFT JOIN users u2 ON pv.approved_by = u2.id
+    LEFT JOIN "User" u1 ON pv.created_by = u1.id
+    LEFT JOIN "User" u2 ON pv.approved_by = u2.id
 WHERE pv.is_current = TRUE AND p.is_active = TRUE;
 
 -- View for prompt change summary
@@ -841,9 +841,9 @@ FROM agents a
 LEFT JOIN prompts p ON a.id = p.agent_id
 LEFT JOIN prompt_versions pv ON p.id = pv.prompt_id
 LEFT JOIN model_clients mc ON a.model_client_id = mc.id
-LEFT JOIN users ua ON a.created_by = ua.id
-LEFT JOIN users upv ON pv.created_by = upv.id
-LEFT JOIN users umc ON mc.created_by = umc.id
+LEFT JOIN "User" ua ON a.created_by = ua.id
+LEFT JOIN "User" upv ON pv.created_by = upv.id
+LEFT JOIN "User" umc ON mc.created_by = umc.id
 WHERE a.is_active = TRUE AND (p.is_active = TRUE OR p.id IS NULL);
 
 -- ================================================
@@ -863,7 +863,7 @@ CREATE OR REPLACE FUNCTION create_user(
 DECLARE
     v_user_id INTEGER;
 BEGIN
-    INSERT INTO users (
+    INSERT INTO "User" (
         username, identifier, email, password_hash, first_name, last_name, 
         role, is_active, is_verified, created_by
     ) VALUES (
@@ -889,7 +889,7 @@ CREATE OR REPLACE FUNCTION authenticate_user(
 ) AS $$
 BEGIN
     -- Update last login on successful authentication
-    UPDATE users 
+    UPDATE "User" 
     SET last_login = CURRENT_TIMESTAMP, 
         failed_login_attempts = 0 
     WHERE username = p_username 
@@ -899,7 +899,7 @@ BEGIN
     -- Return user info if authentication successful
     RETURN QUERY
     SELECT u.id, u.username, u.email, u.role, u.is_active, u.is_verified
-    FROM users u
+    FROM "User" u
     WHERE u.username = p_username 
         AND u.password_hash = p_password_hash 
         AND u.is_active = TRUE;
@@ -909,7 +909,7 @@ $$ LANGUAGE plpgsql;
 -- Function to handle failed login attempts
 CREATE OR REPLACE FUNCTION record_failed_login(p_username VARCHAR) RETURNS VOID AS $$
 BEGIN
-    UPDATE users 
+    UPDATE "User" 
     SET failed_login_attempts = failed_login_attempts + 1,
         locked_until = CASE 
             WHEN failed_login_attempts >= 4 THEN CURRENT_TIMESTAMP + INTERVAL '30 minutes'
@@ -1083,7 +1083,7 @@ DECLARE
     v_user_identifier TEXT;
 BEGIN
     -- Get user identifier for compatibility
-    SELECT username INTO v_user_identifier FROM users WHERE id = p_user_id;
+    SELECT username INTO v_user_identifier FROM "User" WHERE id = p_user_id;
     
     INSERT INTO threads (
         name, user_id, user_identifier, tags, metadata
@@ -1241,7 +1241,7 @@ BEGIN
         COUNT(pch.id) as change_count
     FROM prompts p
     JOIN prompt_versions pv ON p.id = pv.prompt_id
-    LEFT JOIN users u ON pv.created_by = u.id
+    LEFT JOIN "User" u ON pv.created_by = u.id
     LEFT JOIN prompt_change_history pch ON pv.id = pch.prompt_version_id
     WHERE p.prompt_id = p_prompt_id
     GROUP BY pv.id, pv.version_number, pv.version_label, pv.content, pv.status, u.username, u.first_name, u.last_name, pv.created_at
@@ -1303,8 +1303,8 @@ $$ LANGUAGE plpgsql;
 -- Comments and Documentation
 -- ================================================
 
-COMMENT ON TABLE users IS 'User accounts with authentication and role management';
-COMMENT ON COLUMN users.identifier IS 'Unique identifier for Chainlit compatibility (usually same as username)';
+COMMENT ON TABLE "User" IS 'User accounts with authentication and role management';
+COMMENT ON COLUMN "User".identifier IS 'Unique identifier for Chainlit compatibility (usually same as username)';
 COMMENT ON TABLE password_reset_tokens IS 'Secure tokens for password reset functionality';
 COMMENT ON TABLE user_sessions IS 'User login sessions with device and location tracking';
 COMMENT ON TABLE user_preferences IS 'User-specific application preferences and settings';
@@ -1321,10 +1321,10 @@ COMMENT ON TABLE prompt_change_history IS 'Detailed change tracking for prompt m
 COMMENT ON TABLE model_clients IS 'Model client configurations for agents';
 COMMENT ON TABLE component_types IS 'Lookup table for component types';
 
-COMMENT ON COLUMN users.avatar_url IS 'URL to user avatar image';
-COMMENT ON COLUMN users.timezone IS 'User timezone for proper datetime display';
-COMMENT ON COLUMN users.language IS 'Preferred interface language code (ISO 639-1)';
-COMMENT ON COLUMN users.email_verified_at IS 'Timestamp when email was verified';
+COMMENT ON COLUMN "User".avatar_url IS 'URL to user avatar image';
+COMMENT ON COLUMN "User".timezone IS 'User timezone for proper datetime display';
+COMMENT ON COLUMN "User".language IS 'Preferred interface language code (ISO 639-1)';
+COMMENT ON COLUMN "User".email_verified_at IS 'Timestamp when email was verified';
 COMMENT ON COLUMN password_reset_tokens.token_hash IS 'Hashed token for security (never store plain text)';
 COMMENT ON COLUMN user_sessions.device_info IS 'JSON containing device platform, browser, OS details';
 COMMENT ON COLUMN user_sessions.location_info IS 'JSON containing country, city, timezone from IP';

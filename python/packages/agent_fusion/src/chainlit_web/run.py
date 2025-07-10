@@ -4,7 +4,7 @@ from chainlit import Message
 from schemas import ComponentType, Component
 import dataclasses
 from typing import Dict, cast
-
+from dotenv import load_dotenv
 from builders import GraphFlowBuilder
 from builders import load_info
 from builders import utils as builders_utils
@@ -17,6 +17,7 @@ from autogen_agentchat.ui import Console
 from aglogger import enable_logger, FilterType
 from chainlit.input_widget import Select, Switch, Slider
 from chainlit_web import user
+from chainlit_web.user.auth import get_data_layer, data_layer_instance
 
 
 # TODO: Import get_weather function from appropriate module
@@ -61,7 +62,10 @@ async def wrap_input(prompt: str, token: CancellationToken) -> str:
 
 @cl.on_app_startup
 async def on_app_startup() -> None:
+    load_dotenv()
     enable_logger(["autogen_core.events"], filter_types=[FilterType.ToolCall, FilterType.LLMCall])
+    global data_layer_instance
+    data_layer_instance=get_data_layer()
     print("on_app_startup")
 
 @cl.on_chat_start  # type: ignore

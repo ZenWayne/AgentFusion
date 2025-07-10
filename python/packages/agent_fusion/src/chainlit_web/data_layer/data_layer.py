@@ -105,7 +105,7 @@ class AgentFusionDataLayer(ChainlitDataLayer):
                 user_query = """
                     SELECT id, username, email, password_hash, role, is_active, is_verified, 
                            failed_login_attempts, locked_until, last_login
-                    FROM users 
+                    FROM "User" 
                     WHERE username = $1 OR email = $1
                 """
                 user_record = await conn.fetchrow(user_query, username)
@@ -151,7 +151,7 @@ class AgentFusionDataLayer(ChainlitDataLayer):
                 
                 # Password is correct - reset failed attempts and update last login
                 update_query = """
-                    UPDATE users 
+                    UPDATE "User" 
                     SET last_login = CURRENT_TIMESTAMP, 
                         failed_login_attempts = 0,
                         locked_until = NULL
@@ -187,7 +187,7 @@ class AgentFusionDataLayer(ChainlitDataLayer):
     async def record_failed_login(self, conn, username: str):
         """Record failed login attempt and handle account locking"""
         lock_query = """
-            UPDATE users 
+            UPDATE "User" 
             SET failed_login_attempts = failed_login_attempts + 1,
                 locked_until = CASE 
                     WHEN failed_login_attempts >= 4 THEN CURRENT_TIMESTAMP + INTERVAL '30 minutes'
@@ -246,7 +246,7 @@ class AgentFusionDataLayer(ChainlitDataLayer):
                 
                 # Insert user
                 user_query = """
-                    INSERT INTO users (username, identifier, email, password_hash, role, first_name, last_name)
+                    INSERT INTO "User" (username, identifier, email, password_hash, role, first_name, last_name)
                     VALUES ($1, $2, $3, $4, $5, $6, $7)
                     RETURNING id, created_at
                 """

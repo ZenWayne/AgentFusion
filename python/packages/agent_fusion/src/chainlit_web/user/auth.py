@@ -13,18 +13,18 @@ from ..data_layer.data_layer import AgentFusionDataLayer, AgentFusionUser
 
 # Initialize database auth handler
 # Use 'db' for Docker Compose, 'localhost' for local development
-DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Create global data layer instance
-data_layer_instance = None
+data_layer_instance: Optional[AgentFusionDataLayer] = None
 
 @cl.data_layer
-def get_data_layer():
+def get_data_layer() -> AgentFusionDataLayer:
     """Get the AgentFusionDataLayer instance"""
     global data_layer_instance
     if data_layer_instance is None:
+        database_url = os.getenv("DATABASE_URL")
         # AgentFusionDataLayer uses database_url directly (inherits from ChainlitDataLayer)
-        data_layer_instance = AgentFusionDataLayer(database_url=DATABASE_URL)
+        data_layer_instance = AgentFusionDataLayer(database_url=database_url)
     return data_layer_instance
 
 @cl.header_auth_callback
@@ -46,7 +46,7 @@ def auth_callback(username: str, password: str):
         ip_address = None  # You might want to get this from request headers
         
         # Get the data layer instance
-        data_layer = get_data_layer()
+        data_layer:AgentFusionDataLayer = get_data_layer()
         
         # Run async authentication in sync context
         loop = asyncio.new_event_loop()
@@ -82,7 +82,7 @@ async def create_admin_user():
     """Create default admin user if it doesn't exist"""
     try:
         # Get the data layer instance
-        data_layer = get_data_layer()
+        data_layer:AgentFusionDataLayer = get_data_layer()
         
         # Check if admin user exists
         user_data = await data_layer.authenticate_user("admin", "admin123!")
