@@ -37,7 +37,7 @@ def header_auth_callback(headers: Dict) -> Optional[cl.User]:
     return None
 
 @cl.password_auth_callback
-def auth_callback(username: str, password: str):
+async def auth_callback(username: str, password: str):
     """
     Chainlit authentication callback - validates user credentials against database
     """
@@ -49,19 +49,14 @@ def auth_callback(username: str, password: str):
         data_layer:AgentFusionDataLayer = get_data_layer()
         
         # Run async authentication in sync context
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        try:
-            user_data = loop.run_until_complete(
-                data_layer.authenticate_user(username, password, ip_address)
-            )
-        finally:
-            loop.close()
+        user_data = await data_layer.authenticate_user(username, password, ip_address)
         
         if user_data:
-            return cl.User(
+            return AgentFusionUser(
+                id=user_data['id'],
+                uuid=user_data['uuid'],
                 identifier=user_data['username'],
+                createdAt=user_data['created_at'],
                 metadata={
                     "user_id": user_data['id'],
                     "email": user_data['email'],

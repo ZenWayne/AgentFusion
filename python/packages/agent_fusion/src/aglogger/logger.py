@@ -33,7 +33,13 @@ handler.setFormatter(ShortPathFormatter(
 '%(asctime)s [%(levelname)s] %(pathname)s:%(lineno)d - %(message)s'
 ))
 
-def enable_logger(name:list[str], supress_other_level:int=logging.WARNING, filter_types:list[FilterType]=[FilterType.LLMCall]):
+def enable_chainlit_logger(log_level:int=logging.INFO):
+    logger = logging.getLogger("chainlit")
+    logger.setLevel(log_level)
+    logger.addHandler(handler)
+
+
+def enable_autogen_logger(name:list[str], supress_other_level:int=logging.WARNING, filter_types:list[FilterType]=[FilterType.LLMCall]):
     # 设置根logger级别，但不创建默认handler
     logging.getLogger().setLevel(supress_other_level)
 

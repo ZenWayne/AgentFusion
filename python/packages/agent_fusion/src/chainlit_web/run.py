@@ -14,7 +14,7 @@ from chainlit_web.ui_hook.ui_select_group_chat import (
 from autogen_agentchat.teams import BaseGroupChat
 from autogen_core import CancellationToken
 from autogen_agentchat.ui import Console
-from aglogger import enable_logger, FilterType
+from aglogger import enable_autogen_logger, FilterType, enable_chainlit_logger
 from chainlit.input_widget import Select, Switch, Slider
 from chainlit_web import user
 from chainlit_web.user.auth import get_data_layer, data_layer_instance
@@ -63,7 +63,8 @@ async def wrap_input(prompt: str, token: CancellationToken) -> str:
 @cl.on_app_startup
 async def on_app_startup() -> None:
     load_dotenv()
-    enable_logger(["autogen_core.events"], filter_types=[FilterType.ToolCall, FilterType.LLMCall])
+    enable_chainlit_logger()
+    enable_autogen_logger(["autogen_core.events"], filter_types=[FilterType.ToolCall, FilterType.LLMCall])
     global data_layer_instance
     data_layer_instance=get_data_layer()
     print("on_app_startup")

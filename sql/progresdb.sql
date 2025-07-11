@@ -35,6 +35,7 @@ CREATE TABLE component_types (
 -- Users table
 CREATE TABLE "User" (
     id SERIAL PRIMARY KEY,
+    user_uuid UUID UNIQUE DEFAULT gen_random_uuid(), -- External identifier
     username VARCHAR(100) NOT NULL UNIQUE,
     identifier VARCHAR(100) NOT NULL UNIQUE, -- For Chainlit compatibility
     email VARCHAR(255) NOT NULL UNIQUE,
@@ -52,7 +53,7 @@ CREATE TABLE "User" (
     locked_until TIMESTAMP,
     email_verified_at TIMESTAMP,
     phone VARCHAR(20),
-    metadata JSONB, -- Store additional user preferences, settings, etc.
+    metadata JSONB DEFAULT '{}', -- Store additional user preferences, settings, etc.
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by INTEGER REFERENCES "User"(id),
@@ -80,8 +81,8 @@ CREATE TABLE user_sessions (
     refresh_token VARCHAR(255),
     ip_address INET,
     user_agent TEXT,
-    device_info JSONB,
-    location_info JSONB, -- Country, city, etc.
+    device_info JSONB DEFAULT '{}',
+    location_info JSONB DEFAULT '{}', -- Country, city, etc.
     is_active BOOLEAN DEFAULT TRUE,
     last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP NOT NULL,
@@ -108,7 +109,7 @@ CREATE TABLE user_api_keys (
     name VARCHAR(100) NOT NULL, -- User-friendly name for the key
     key_prefix VARCHAR(20) NOT NULL, -- First few chars for identification
     key_hash VARCHAR(255) NOT NULL, -- Hashed API key
-    permissions JSONB, -- Specific permissions for this key
+    permissions JSONB DEFAULT '{}', -- Specific permissions for this key
     rate_limit INTEGER DEFAULT 1000, -- Requests per hour
     is_active BOOLEAN DEFAULT TRUE,
     last_used TIMESTAMP,
@@ -127,7 +128,7 @@ CREATE TABLE user_activity_logs (
     activity_type VARCHAR(50) NOT NULL, -- login, logout, create, update, delete, etc.
     resource_type VARCHAR(50), -- agent, prompt, model_client, etc.
     resource_id INTEGER, -- ID of the affected resource
-    action_details JSONB, -- Detailed information about the action
+    action_details JSONB DEFAULT '{}', -- Detailed information about the action
     ip_address INET,
     user_agent TEXT,
     session_id INTEGER REFERENCES user_sessions(id) ON DELETE SET NULL,
@@ -147,6 +148,7 @@ CREATE TABLE threads (
     metadata JSONB DEFAULT '{}',
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -167,7 +169,7 @@ CREATE TABLE steps (
     command TEXT,
     start_time TIMESTAMP,
     end_time TIMESTAMP,
-    generation JSONB, -- AI generation metadata
+    generation JSONB DEFAULT '{}', -- AI generation metadata
     show_input TEXT,
     language TEXT,
     indent INTEGER DEFAULT 0,
@@ -214,6 +216,7 @@ CREATE TABLE feedbacks (
 -- Model clients table
 CREATE TABLE model_clients (
     id SERIAL PRIMARY KEY,
+    client_uuid UUID UNIQUE DEFAULT gen_random_uuid(), -- External identifier
     label VARCHAR(255) NOT NULL UNIQUE,
     provider VARCHAR(500) NOT NULL,
     component_type_id INTEGER REFERENCES component_types(id),
@@ -223,8 +226,8 @@ CREATE TABLE model_clients (
     model_name VARCHAR(255),
     base_url VARCHAR(500),
     api_key_hash VARCHAR(255), -- Store hash instead of actual key
-    model_info JSONB, -- Store model capabilities (vision, function_calling, etc.)
-    config JSONB, -- Store full configuration
+    model_info JSONB DEFAULT '{}', -- Store model capabilities (vision, function_calling, etc.)
+    config JSONB DEFAULT '{}', -- Store full configuration
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by INTEGER REFERENCES "User"(id),
@@ -235,6 +238,7 @@ CREATE TABLE model_clients (
 -- Agents table
 CREATE TABLE agents (
     id SERIAL PRIMARY KEY,
+    agent_uuid UUID UNIQUE DEFAULT gen_random_uuid(), -- External identifier
     name VARCHAR(255) NOT NULL UNIQUE,
     label VARCHAR(255) NOT NULL,
     provider VARCHAR(500) NOT NULL,
@@ -243,7 +247,7 @@ CREATE TABLE agents (
     component_version INTEGER DEFAULT 1,
     description TEXT,
     model_client_id INTEGER REFERENCES model_clients(id),
-    config JSONB, -- Store agent configuration
+    config JSONB DEFAULT '{}', -- Store agent configuration
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by INTEGER REFERENCES "User"(id),
@@ -254,6 +258,7 @@ CREATE TABLE agents (
 -- Prompts table (main prompt definitions)
 CREATE TABLE prompts (
     id SERIAL PRIMARY KEY,
+    prompt_uuid UUID UNIQUE DEFAULT gen_random_uuid(), -- External identifier
     prompt_id VARCHAR(100) NOT NULL UNIQUE, -- Business identifier
     name VARCHAR(255) NOT NULL,
     category VARCHAR(100), -- e.g., 'agent', 'group_chat', 'ui_design'
@@ -270,12 +275,13 @@ CREATE TABLE prompts (
 -- Prompt versions table (version history)
 CREATE TABLE prompt_versions (
     id SERIAL PRIMARY KEY,
+    version_uuid UUID UNIQUE DEFAULT gen_random_uuid(), -- External identifier
     prompt_id INTEGER REFERENCES prompts(id),
     version_number INTEGER NOT NULL,
     version_label VARCHAR(100), -- e.g., 'v1.0', 'v1.1-beta'
     content TEXT NOT NULL, -- The actual prompt text
     content_hash VARCHAR(64), -- SHA256 hash of content for integrity
-    metadata JSONB, -- Store template variables, parameters, etc.
+    metadata JSONB DEFAULT '{}', -- Store template variables, parameters, etc.
     status VARCHAR(50) DEFAULT 'draft', -- draft, review, approved, deprecated
     created_by INTEGER REFERENCES "User"(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -293,11 +299,11 @@ CREATE TABLE prompt_change_history (
     change_description TEXT,
     old_content TEXT, -- Previous content (for updates)
     new_content TEXT, -- New content (for updates)
-    diff_info JSONB, -- Store detailed diff information
+    diff_info JSONB DEFAULT '{}', -- Store detailed diff information
     changed_by INTEGER REFERENCES "User"(id),
     changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     change_reason TEXT,
-    metadata JSONB -- Additional change context
+    metadata JSONB DEFAULT '{}' -- Additional change context
 );
 
 -- ================================================
@@ -305,14 +311,15 @@ CREATE TABLE prompt_change_history (
 -- ================================================
 
 -- Users indexes
-CREATE INDEX idx_users_username ON User(username);
-CREATE INDEX idx_users_identifier ON User(identifier);
-CREATE INDEX idx_users_email ON User(email);
-CREATE INDEX idx_users_role ON User(role);
-CREATE INDEX idx_users_active ON User(is_active);
-CREATE INDEX idx_users_created_at ON User(created_at);
-CREATE INDEX idx_users_timezone ON User(timezone);
-CREATE INDEX idx_users_language ON User(language);
+CREATE INDEX idx_users_user_uuid ON "User"(user_uuid);
+CREATE INDEX idx_users_username ON "User"(username);
+CREATE INDEX idx_users_identifier ON "User"(identifier);
+CREATE INDEX idx_users_email ON "User"(email);
+CREATE INDEX idx_users_role ON "User"(role);
+CREATE INDEX idx_users_active ON "User"(is_active);
+CREATE INDEX idx_users_created_at ON "User"(created_at);
+CREATE INDEX idx_users_timezone ON "User"(timezone);
+CREATE INDEX idx_users_language ON "User"(language);
 
 -- Password reset tokens indexes
 CREATE INDEX idx_password_reset_tokens_user_id ON password_reset_tokens(user_id);
@@ -384,19 +391,25 @@ CREATE INDEX idx_feedbacks_value ON feedbacks(value);
 CREATE INDEX idx_feedbacks_feedback_type ON feedbacks(feedback_type);
 CREATE INDEX idx_feedbacks_created_at ON feedbacks(created_at);
 
+-- Model clients indexes
+CREATE INDEX idx_model_clients_client_uuid ON model_clients(client_uuid);
+
 -- Agents indexes
+CREATE INDEX idx_agents_agent_uuid ON agents(agent_uuid);
 CREATE INDEX idx_agents_name ON agents(name);
 CREATE INDEX idx_agents_label ON agents(label);
 CREATE INDEX idx_agents_active ON agents(is_active);
 CREATE INDEX idx_agents_model_client ON agents(model_client_id);
 
 -- Prompts indexes
+CREATE INDEX idx_prompts_prompt_uuid ON prompts(prompt_uuid);
 CREATE INDEX idx_prompts_prompt_id ON prompts(prompt_id);
 CREATE INDEX idx_prompts_category ON prompts(category);
 CREATE INDEX idx_prompts_agent_id ON prompts(agent_id);
 CREATE INDEX idx_prompts_active ON prompts(is_active);
 
 -- Prompt versions indexes
+CREATE INDEX idx_prompt_versions_version_uuid ON prompt_versions(version_uuid);
 CREATE INDEX idx_prompt_versions_prompt_id ON prompt_versions(prompt_id);
 CREATE INDEX idx_prompt_versions_version ON prompt_versions(version_number);
 CREATE INDEX idx_prompt_versions_current ON prompt_versions(is_current);
@@ -605,21 +618,21 @@ INSERT INTO prompts (prompt_id, name, category, subcategory, description, agent_
 
 -- Insert sample threads
 INSERT INTO threads (id, name, user_id, user_identifier, tags, metadata) VALUES 
-    ('550e8400-e29b-41d4-a716-446655440001', 'Welcome Chat Session', 2, 'admin', ARRAY['welcome', 'tutorial'], '{"session_type": "onboarding", "priority": "high"}'),
-    ('550e8400-e29b-41d4-a716-446655440002', 'Agent Development Discussion', 3, 'developer', ARRAY['development', 'agent'], '{"project": "agent_fusion", "sprint": 1}'),
-    ('550e8400-e29b-41d4-a716-446655440003', 'Prompt Review Session', 4, 'reviewer', ARRAY['review', 'prompts'], '{"review_type": "quality_check"}');
+    ('550e8400-e29b-41d4-a716-446655440001', 'Welcome Chat Session', 2, 'admin', ARRAY['welcome', 'tutorial'], '{}'),
+    ('550e8400-e29b-41d4-a716-446655440002', 'Agent Development Discussion', 3, 'developer', ARRAY['development', 'agent'], '{}'),
+    ('550e8400-e29b-41d4-a716-446655440003', 'Prompt Review Session', 4, 'reviewer', ARRAY['review', 'prompts'], '{}');
 
 -- Insert sample steps
 INSERT INTO steps (id, name, type, thread_id, streaming, input, output, metadata) VALUES 
-    ('650e8400-e29b-41d4-a716-446655440001', 'Welcome Message', 'system', '550e8400-e29b-41d4-a716-446655440001', FALSE, NULL, 'Welcome to AgentFusion! How can I help you today?', '{"auto_generated": true}'),
-    ('650e8400-e29b-41d4-a716-446655440002', 'User Question', 'user', '550e8400-e29b-41d4-a716-446655440001', FALSE, 'How do I create a new agent?', NULL, '{"message_type": "question"}'),
-    ('650e8400-e29b-41d4-a716-446655440003', 'Agent Response', 'assistant', '550e8400-e29b-41d4-a716-446655440001', FALSE, NULL, 'To create a new agent, you can use the agent builder interface...', '{"response_time_ms": 1500}'),
-    ('650e8400-e29b-41d4-a716-446655440004', 'Code Discussion', 'user', '550e8400-e29b-41d4-a716-446655440002', FALSE, 'Let me review the agent configuration', NULL, '{"code_review": true}');
+    ('650e8400-e29b-41d4-a716-446655440001', 'Welcome Message', 'system', '550e8400-e29b-41d4-a716-446655440001', FALSE, NULL, 'Welcome to AgentFusion! How can I help you today?', '{}'),
+    ('650e8400-e29b-41d4-a716-446655440002', 'User Question', 'user', '550e8400-e29b-41d4-a716-446655440001', FALSE, 'How do I create a new agent?', NULL, '{}'),
+    ('650e8400-e29b-41d4-a716-446655440003', 'Agent Response', 'assistant', '550e8400-e29b-41d4-a716-446655440001', FALSE, NULL, 'To create a new agent, you can use the agent builder interface...', '{}'),
+    ('650e8400-e29b-41d4-a716-446655440004', 'Code Discussion', 'user', '550e8400-e29b-41d4-a716-446655440002', FALSE, 'Let me review the agent configuration', NULL, '{}');
 
 -- Insert sample elements
 INSERT INTO elements (id, thread_id, step_id, type, name, url, mime_type, size_bytes, props) VALUES 
-    ('750e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440001', '650e8400-e29b-41d4-a716-446655440003', 'file', 'agent_config.json', '/uploads/agent_config.json', 'application/json', 2048, '{"downloadable": true}'),
-    ('750e8400-e29b-41d4-a716-446655440002', '550e8400-e29b-41d4-a716-446655440002', '650e8400-e29b-41d4-a716-446655440004', 'image', 'architecture_diagram.png', '/uploads/architecture.png', 'image/png', 156789, '{"width": 1200, "height": 800}');
+    ('750e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440001', '650e8400-e29b-41d4-a716-446655440003', 'file', 'agent_config.json', '/uploads/agent_config.json', 'application/json', 2048, '{}'),
+    ('750e8400-e29b-41d4-a716-446655440002', '550e8400-e29b-41d4-a716-446655440002', '650e8400-e29b-41d4-a716-446655440004', 'image', 'architecture_diagram.png', '/uploads/architecture.png', 'image/png', 156789, '{}');
 
 -- Insert sample feedbacks
 INSERT INTO feedbacks (id, for_id, thread_id, user_id, value, comment, feedback_type) VALUES 
@@ -1213,6 +1226,75 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ================================================
+-- Hybrid ID Helper Functions
+-- ================================================
+
+-- Function to get user by UUID (for external APIs)
+CREATE OR REPLACE FUNCTION get_user_by_uuid(p_user_uuid UUID)
+RETURNS TABLE (
+    id INTEGER,
+    user_uuid UUID,
+    username VARCHAR,
+    email VARCHAR,
+    role VARCHAR,
+    is_active BOOLEAN
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT u.id, u.user_uuid, u.username, u.email, u.role, u.is_active
+    FROM "User" u
+    WHERE u.user_uuid = p_user_uuid AND u.is_active = TRUE;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get agent by UUID (for external APIs)
+CREATE OR REPLACE FUNCTION get_agent_by_uuid(p_agent_uuid UUID)
+RETURNS TABLE (
+    id INTEGER,
+    agent_uuid UUID,
+    name VARCHAR,
+    label VARCHAR,
+    description TEXT,
+    is_active BOOLEAN
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT a.id, a.agent_uuid, a.name, a.label, a.description, a.is_active
+    FROM agents a
+    WHERE a.agent_uuid = p_agent_uuid AND a.is_active = TRUE;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get prompt by UUID (for external APIs)
+CREATE OR REPLACE FUNCTION get_prompt_by_uuid(p_prompt_uuid UUID)
+RETURNS TABLE (
+    id INTEGER,
+    prompt_uuid UUID,
+    prompt_id VARCHAR,
+    name VARCHAR,
+    category VARCHAR,
+    description TEXT,
+    is_active BOOLEAN
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT p.id, p.prompt_uuid, p.prompt_id, p.name, p.category, p.description, p.is_active
+    FROM prompts p
+    WHERE p.prompt_uuid = p_prompt_uuid AND p.is_active = TRUE;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get internal ID from UUID (for performance-critical internal operations)
+CREATE OR REPLACE FUNCTION get_user_id_from_uuid(p_user_uuid UUID) RETURNS INTEGER AS $$
+DECLARE
+    v_user_id INTEGER;
+BEGIN
+    SELECT id INTO v_user_id FROM "User" WHERE user_uuid = p_user_uuid;
+    RETURN v_user_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ================================================
 -- Useful Functions
 -- ================================================
 
@@ -1298,6 +1380,54 @@ BEGIN
     RETURN v_new_version_id;
 END;
 $$ LANGUAGE plpgsql;
+
+-- ================================================
+-- Hybrid ID Strategy (Serial + UUID)
+-- ================================================
+
+/*
+HYBRID ID DESIGN PATTERN:
+
+1. INTERNAL USE (Performance):
+   - All tables use SERIAL (auto-increment integer) as PRIMARY KEY
+   - All foreign key relationships use SERIAL IDs for best performance
+   - Internal queries and joins use SERIAL IDs
+
+2. EXTERNAL USE (Security):
+   - Selected tables have additional UUID columns for external APIs
+   - UUIDs are used in REST endpoints, public URLs, and client-facing interfaces
+   - UUIDs prevent enumeration attacks and information leakage
+
+USAGE EXAMPLES:
+
+-- Internal query (fast performance):
+SELECT * FROM "User" u 
+JOIN threads t ON u.id = t.user_id 
+WHERE u.id = 12345;
+
+-- External API query (secure):
+SELECT * FROM "User" u 
+JOIN threads t ON u.id = t.user_id 
+WHERE u.user_uuid = '550e8400-e29b-41d4-a716-446655440000';
+
+-- External API endpoints should use UUIDs:
+GET /api/users/550e8400-e29b-41d4-a716-446655440000
+GET /api/agents/7b2c8d1a-3f5e-4a9b-8c7d-1e2f3a4b5c6d
+GET /api/prompts/9a8b7c6d-5e4f-3a2b-1c9d-8e7f6a5b4c3d
+
+-- Tables with hybrid strategy:
+- User: id (SERIAL) + user_uuid (UUID)
+- model_clients: id (SERIAL) + client_uuid (UUID)  
+- agents: id (SERIAL) + agent_uuid (UUID)
+- prompts: id (SERIAL) + prompt_uuid (UUID)
+- prompt_versions: id (SERIAL) + version_uuid (UUID)
+
+-- Tables using UUID as primary key (already secure):
+- threads: id (UUID PRIMARY KEY)
+- steps: id (UUID PRIMARY KEY)
+- elements: id (UUID PRIMARY KEY)  
+- feedbacks: id (UUID PRIMARY KEY)
+*/
 
 -- ================================================
 -- Comments and Documentation

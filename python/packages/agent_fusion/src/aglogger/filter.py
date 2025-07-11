@@ -20,8 +20,8 @@ class CallFilter(logging.Filter):
             # 检查是否包含type字段且值为LLMCall
             return data.get('type') in self.filter_type
         except (json.JSONDecodeError, AttributeError):
-            # 如果不是JSON格式或解析失败，不通过过滤器
-            return False
+            # 如果不是JSON格式或解析失败，默认通过过滤器
+            return True
 
 class ToolCallFilter(logging.Filter):
     """过滤器：只允许LLMCall类型的日志通过"""
