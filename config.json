@@ -18,9 +18,9 @@
             "env": {}
         },
         "file_system": {
-            "command": "npx",
+            "command": "node",
             "args": [
-                "@modelcontextprotocol/server-filesystem", 
+                "${userHome}\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-filesystem\\dist\\index.js", 
                 "${cwd}"
             ],
             "env": {},

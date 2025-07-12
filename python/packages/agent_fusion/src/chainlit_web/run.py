@@ -18,6 +18,7 @@ from aglogger import enable_autogen_logger, FilterType, enable_chainlit_logger
 from chainlit.input_widget import Select, Switch, Slider
 from chainlit_web import user
 from chainlit_web.user.auth import get_data_layer, data_layer_instance
+from chainlit.config import config
 
 
 # TODO: Import get_weather function from appropriate module
@@ -63,6 +64,8 @@ async def wrap_input(prompt: str, token: CancellationToken) -> str:
 @cl.on_app_startup
 async def on_app_startup() -> None:
     load_dotenv()
+    # config.run.port = 443
+    # config.run.host = "e73cd5b88ea8.ngrok-free.app"
     enable_chainlit_logger()
     enable_autogen_logger(["autogen_core.events"], filter_types=[FilterType.ToolCall, FilterType.LLMCall])
     global data_layer_instance

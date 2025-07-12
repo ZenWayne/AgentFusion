@@ -668,8 +668,8 @@ class AgentFusionDataLayer(BaseDataLayer):
     def _extract_feedback_dict_from_step_row(self, row: Dict) -> Optional[FeedbackDict]:
         if row["feedback_id"] is not None:
             return FeedbackDict(
-                forId=row["id"],
-                id=row["feedback_id"],
+                forId=str(row["id"]),
+                id=str(row["feedback_id"]),
                 value=row["feedback_value"],
                 comment=row["feedback_comment"],
             )
@@ -885,34 +885,90 @@ class AgentFusionDataLayer(BaseDataLayer):
             status
         )
     
-    async def create_user(self, user: PersistedUser) -> Optional[AgentFusionUser]:
-        """Update existing user's last_login timestamp"""
+    async def update_user(self, user: PersistedUser) -> Optional[AgentFusionUser]:
+        """Update user's last_login timestamp"""
         if not self.pool:
             await self.connect()
-            
+        
+        async with self.pool.acquire() as conn:
+            update_query = """
+                UPDATE "User"
+                SET last_login = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = $1
+            """
+            await conn.execute(update_query, user.id)
+        return user
+    
+    async def create_user(self, user: User) -> Optional[AgentFusionUser]:
+        """
+        When it reach here, it means that the user must be exists
+        thereis two cases:
+        1. user is authenticated by oauth, we should create a new user if it doesn't exist
+        2. user is authenticated by password, we should fetch the user, 
+           and it should never create a new user, because it already checked 
+           from password_auth_callback and is exists in db
+        """
+        _user: Optional[PersistedUser] = await self.get_user(identifier=user.identifier)
+        if _user:
+            #if user is authenticated by password, it should never create a new user, 
+            #and if the user is created from the last oauth, 
+            #it should update the user's last_login timestamp
+            await self.update_user(user)
+            return _user            
+
         async with self.pool.acquire() as connection:
             try:
                 now = await self.get_current_timestamp()
                 
-                # UPDATE query - only update last_login (updated_at is handled by trigger)
-                update_query = """
-                UPDATE "User" 
-                SET last_login = $1
-                WHERE id = $2
+                # Extract user metadata
+                metadata = user.metadata if hasattr(user, 'metadata') else {}
+                
+                # Handle nested metadata structure - extract email from nested metadata if present
+                email = None
+                if 'email' in metadata:
+                    email = metadata['email']
+                elif 'metadata' in metadata and isinstance(metadata['metadata'], dict):
+                    email = metadata['metadata'].get('email')
+                
+                # Provide default email if still None to satisfy NOT NULL constraint
+                if email is None:
+                    email = f"{user.identifier}@example.com"  # Default email based on identifier
+                
+                # INSERT ... ON CONFLICT DO UPDATE query
+                upsert_query = """
+                INSERT INTO "User" (
+                    id, user_uuid, username, identifier, email, role, first_name, last_name,
+                    created_at, last_login, metadata, is_active
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+                )
+                ON CONFLICT (id) DO UPDATE SET
+                    last_login = EXCLUDED.last_login
                 RETURNING id, user_uuid, username, identifier, email, role, first_name, last_name, 
-                          created_at, updated_at, metadata, is_active
+                        created_at, updated_at, metadata, is_active
                 """
                 
                 params = [
+                    user.id,  # id
+                    user.uuid or str(uuid.uuid4()),  # user_uuid
+                    user.identifier,  # username
+                    user.identifier,  # identifier
+                    metadata.get('email'),  # email
+                    metadata.get('role', 'user'),  # role
+                    metadata.get('first_name'),  # first_name
+                    metadata.get('last_name'),  # last_name
+                    now,  # created_at
                     now,  # last_login
-                    user.id,  # user_id (primary key)
+                    json.dumps(metadata),  # metadata
+                    True,  # is_active
                 ]
                 
-                result = await connection.fetchrow(update_query, *params)
+                result = await connection.fetchrow(upsert_query, *params)
                 
                 if result:
                     # Convert database result to AgentFusionUser
-                    metadata = json.loads(result.get('metadata', '{}'))
+                    result_metadata = json.loads(result.get('metadata', '{}'))
                     
                     return AgentFusionUser(
                         id=result['id'],
@@ -924,13 +980,13 @@ class AgentFusionDataLayer(BaseDataLayer):
                         first_name=result.get('first_name'),
                         last_name=result.get('last_name'),
                         createdAt=result['created_at'].isoformat(),
-                        **{k: v for k, v in metadata.items() 
-                           if k not in ['email', 'role', 'first_name', 'last_name']}
+                        **{k: v for k, v in result_metadata.items() 
+                        if k not in ['email', 'role', 'first_name', 'last_name']}
                     )
                 
                 return None
                 
             except Exception as e:
                 logger.error(f"Error in create_user: {e}")
-                raise
+                raise        
     

@@ -8,8 +8,10 @@ import asyncio
 import asyncpg
 import chainlit as cl
 import os
-from ..data_layer.data_layer import AgentFusionDataLayer, AgentFusionUser
-
+from ..data_layer.data_layer import AgentFusionDataLayer, AgentFusionUser, PersistedUser
+from starlette.requests import cookie_parser
+from chainlit.auth.cookie import get_token_from_cookies
+import jwt as pyjwt
 
 # Initialize database auth handler
 # Use 'db' for Docker Compose, 'localhost' for local development
@@ -27,19 +29,55 @@ def get_data_layer() -> AgentFusionDataLayer:
         data_layer_instance = AgentFusionDataLayer(database_url=database_url)
     return data_layer_instance
 
+@cl.oauth_callback
+def oauth_callback(
+  provider_id: str,
+  token: str,
+  raw_user_data: Dict[str, str],
+  default_user: cl.User,
+) -> Optional[cl.User]:
+  data_layer:AgentFusionDataLayer = get_data_layer()
+  user_data = data_layer.create_user(raw_user_data['email'])
+  if user_data:
+    return cl.User(
+      id=user_data['id'],
+      identifier=user_data['username'],
+      metadata=user_data['metadata']
+    )
+  return default_user
+
+def decode_jwt(token: str) -> AgentFusionUser:
+    secret = os.environ.get("CHAINLIT_AUTH_SECRET")
+    assert secret
+
+    dict = pyjwt.decode(
+        token,
+        secret,
+        algorithms=["HS256"],
+        options={"verify_signature": True},
+    )
+    del dict["exp"]
+    return AgentFusionUser(**dict)
+
+
 @cl.header_auth_callback
-def header_auth_callback(headers: Dict) -> Optional[cl.User]:
-  # Verify the signature of a token in the header (ex: jwt token)
-  # or check that the value is matching a row from your database
-  if headers.get("test-header") == "test-value":
-    return cl.User(identifier="admin", metadata={"role": "admin", "provider": "header"})
-  else:
+async def header_auth_callback(headers: Dict[str, str]) -> Optional[cl.User]:
+    cookies = cookie_parser(headers.get('cookie'))
+    access_token = get_token_from_cookies(cookies)
+    if access_token:
+        try:
+            User: AgentFusionUser = decode_jwt(access_token)
+            return User
+        except Exception as e:
+            print(f"Authentication error: {e}")
+            return None
     return None
 
 @cl.password_auth_callback
-async def auth_callback(username: str, password: str):
+async def password_auth_callback(username: str, password: str):
     """
     Chainlit authentication callback - validates user credentials against database
+    should not create user in db cause it already exists
     """
     try:
         # Get client IP if available (this might need request context)
