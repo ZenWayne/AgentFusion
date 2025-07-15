@@ -37,9 +37,11 @@ graph_flow 多个agent以固定工作流的方式来完成任务
 
 
 #TODO
-1.用户鉴权
-2.记忆功能
-3.多agent切换
+1.用户鉴权 (部分完成， oauth待测试)
+2.多agent切换(目前workflow前端工作量太大，转成手动切agent的方式，左上角tab切换)
+3.记忆功能（在看论文，或许不需要记忆层，使用code执行context工程，参考最新reasearcher论文HLF 32分）
+4.agent工具链的工具选择（目前是手动选择，需要一个自动选择工具的机制）
+
 
 
 

@@ -91,7 +91,7 @@ async def password_auth_callback(username: str, password: str):
         
         if user_data:
             return AgentFusionUser(
-                id=user_data['id'],
+                id=int(user_data['id']),
                 uuid=user_data['uuid'],
                 identifier=user_data['username'],
                 createdAt=user_data['created_at'],

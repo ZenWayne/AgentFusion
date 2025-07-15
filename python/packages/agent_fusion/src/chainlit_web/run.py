@@ -40,7 +40,7 @@ message_chunks: Dict[str, Message] = {}
 async def chat_profile():
     return [
         cl.ChatProfile(
-            name="GPT-3.5",
+            name="GPT-3.6",
             markdown_description="The underlying LLM model is **GPT-3.5**.",
             icon="https://picsum.photos/200",
         ),
@@ -77,7 +77,12 @@ async def start_chat() -> None:
     # Load model configuration and create the model client.
     print("start_chat")
     load_info()
-    settings = await cl.ChatSettings(
+    user = cl.user_session.get("user")
+    chat_profile = cl.user_session.get("chat_profile")
+    await cl.Message(
+        content=f"starting chat with {user.identifier} using the {chat_profile} chat profile"
+    ).send()
+    await cl.ChatSettings(
         [
             Select(
                 id="Model",
