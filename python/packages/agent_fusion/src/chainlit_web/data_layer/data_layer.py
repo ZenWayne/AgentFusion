@@ -32,6 +32,8 @@ from chainlit_web.data_layer.models import (
     StepModel, 
     ElementModel, 
     FeedbackModel,
+    LLMModel,
+    AgentModel,
     PersistedUser,
     PersistedUserFields,
     AgentFusionUser
@@ -49,7 +51,9 @@ class AgentFusionDataLayer(
     ThreadModel, 
     StepModel, 
     ElementModel, 
-    FeedbackModel
+    FeedbackModel,
+    LLMModel,
+    AgentModel
     ):
     """
     重构后的数据层，使用继承模式整合所有模型
@@ -79,6 +83,8 @@ class AgentFusionDataLayer(
         StepModel.__init__(self, self.db_layer)
         ElementModel.__init__(self, self.db_layer)
         FeedbackModel.__init__(self, self.db_layer)
+        LLMModel.__init__(self, self.db_layer)
+        AgentModel.__init__(self, self.db_layer)
 
     async def connect(self):
         """连接数据库"""
@@ -238,6 +244,10 @@ class AgentFusionDataLayer(
     def _truncate(self, text: Optional[str], max_length: int = 255) -> Optional[str]:
         """截断文本"""
         return self.db_layer._truncate(text, max_length)
+    
+    async def get_model_list(self) -> List[Dict[str, Any]]:
+        """获取模型列表用于聊天设置"""
+        return await self.get_model_labels_for_chat_settings()
 
 
 # 为了向后兼容，导出原有的类

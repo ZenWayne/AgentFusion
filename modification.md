@@ -1,0 +1,7 @@
+参考其他文件中的方式以及项目中的sql文件写个查询接口，要求返回的结构需要是utils里面的AgentInfo，还要新增一个更
+  新提示词的接口，然后在run.py里面的chat_profile返回agent选择，由于数据库中返回的有可能是agent以及group，你可以
+  参考将factory_func根据用户设置，更新时取出session中的setting,像run.py里的chat_profile一样，在start_chat做好ty
+  pehint后取出当前的setting中的ChatProfile中的name，以此作为key索引临时的ComponentInfoMap(这个Map存着AgentInfo
+  以及GroupChatInfo),这个Map初始化在chat_settings中，用户选完后会有一个cl.on_settings_update的hook，你自己需要
+  实现，即会即时更新当前选择的Agent设置，选完后会自动更新当前的Chat对象，你需要将原来的agent或者groupchat终结然
+  后重新使用asyncio.create_task(Console(groupchat.run_stream()))新开一个协程聊天
