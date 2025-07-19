@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS password_reset_tokens CASCADE;
 DROP TABLE IF EXISTS prompt_change_history CASCADE;
 DROP TABLE IF EXISTS prompt_versions CASCADE;
 DROP TABLE IF EXISTS prompts CASCADE;
+DROP TABLE IF EXISTS mcp_servers CASCADE;
 DROP TABLE IF EXISTS agents CASCADE;
 DROP TABLE IF EXISTS model_clients CASCADE;
 DROP TABLE IF EXISTS component_types CASCADE;
@@ -255,6 +256,48 @@ CREATE TABLE agents (
     is_active BOOLEAN DEFAULT TRUE
 );
 
+-- Group chats table
+CREATE TABLE group_chats (
+    id SERIAL PRIMARY KEY,
+    group_chat_uuid UUID UNIQUE DEFAULT gen_random_uuid(), -- External identifier
+    name VARCHAR(255) NOT NULL UNIQUE,
+    type VARCHAR(100) NOT NULL, -- e.g., 'selector_group_chat'
+    description TEXT,
+    labels TEXT[] DEFAULT '{}', -- Array of labels
+    selector_prompt TEXT, -- For selector group chat
+    participants JSONB DEFAULT '[]', -- Array of participant names
+    model_client VARCHAR(255), -- Reference to model client label
+    config JSONB DEFAULT '{}', -- Store full configuration
+    component_type_id INTEGER REFERENCES component_types(id),
+    version INTEGER DEFAULT 1,
+    component_version INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by INTEGER REFERENCES "User"(id),
+    updated_by INTEGER REFERENCES "User"(id),
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+-- MCP (Model Context Protocol) servers table
+CREATE TABLE mcp_servers (
+    id SERIAL PRIMARY KEY,
+    server_uuid UUID UNIQUE DEFAULT gen_random_uuid(), -- External identifier
+    name VARCHAR(255) NOT NULL UNIQUE,
+    command VARCHAR(500) NOT NULL,
+    args JSONB DEFAULT '[]', -- Array of command arguments
+    env JSONB DEFAULT '{}', -- Environment variables
+    url VARCHAR(500), -- Optional URL for server
+    headers JSONB DEFAULT '{}', -- HTTP headers for connection
+    timeout INTEGER DEFAULT 30, -- Connection timeout in seconds
+    sse_read_timeout INTEGER DEFAULT 30, -- SSE read timeout in seconds
+    description TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by INTEGER REFERENCES "User"(id),
+    updated_by INTEGER REFERENCES "User"(id)
+);
+
 -- Prompts table (main prompt definitions)
 CREATE TABLE prompts (
     id SERIAL PRIMARY KEY,
@@ -401,6 +444,11 @@ CREATE INDEX idx_agents_label ON agents(label);
 CREATE INDEX idx_agents_active ON agents(is_active);
 CREATE INDEX idx_agents_model_client ON agents(model_client_id);
 
+-- MCP servers indexes
+CREATE INDEX idx_mcp_servers_server_uuid ON mcp_servers(server_uuid);
+CREATE INDEX idx_mcp_servers_name ON mcp_servers(name);
+CREATE INDEX idx_mcp_servers_active ON mcp_servers(is_active);
+
 -- Prompts indexes
 CREATE INDEX idx_prompts_prompt_uuid ON prompts(prompt_uuid);
 CREATE INDEX idx_prompts_prompt_id ON prompts(prompt_id);
@@ -446,6 +494,7 @@ CREATE TRIGGER update_feedbacks_updated_at BEFORE UPDATE ON feedbacks FOR EACH R
 CREATE TRIGGER update_agents_updated_at BEFORE UPDATE ON agents FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_prompts_updated_at BEFORE UPDATE ON prompts FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_model_clients_updated_at BEFORE UPDATE ON model_clients FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_mcp_servers_updated_at BEFORE UPDATE ON mcp_servers FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Function to ensure only one current version per prompt
 CREATE OR REPLACE FUNCTION ensure_single_current_version()
@@ -602,6 +651,8 @@ INSERT INTO component_types (name, description) VALUES
 -- Insert sample model clients based on the config
 INSERT INTO model_clients (label, provider, component_type_id, description, model_name, base_url, model_info, created_by) VALUES 
     ('deepseek-chat_DeepSeek', 'autogen_ext.models.openai.OpenAIChatCompletionClient', 2, 'Chat completion client for OpenAI hosted models.', 'deepseek-chat', 'https://api.deepseek.com/v1', 
+     '{"vision": false, "function_calling": true, "json_output": true, "family": "r1"}'::jsonb, 1),
+     ('qwq-32b_Aliyun', 'autogen_ext.models.openai.OpenAIChatCompletionClient', 2, 'Chat completion client for OpenAI hosted models.', 'qwq-32b', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 
      '{"vision": false, "function_calling": true, "json_output": true, "family": "r1"}'::jsonb, 1);
 
 -- Insert sample agents
@@ -609,6 +660,18 @@ INSERT INTO agents (name, label, provider, component_type_id, description, model
     ('prompt_refiner', 'prompt_refiner', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 1),
     ('executor', 'executor', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 1),
     ('user', 'UserProxyAgent', 'autogen_agentchat.agents.UserProxyAgent', 1, 'A human user', 1, 1);
+
+-- Insert sample MCP servers based on config.json
+INSERT INTO mcp_servers (name, command, args, env, url, timeout, sse_read_timeout, description, created_by) VALUES 
+    ('file_system_windows', 'node', 
+     '["${userHome}\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\@modelcontextprotocol\\\\server-filesystem\\\\dist\\\\index.js", "${cwd}"]'::jsonb, 
+     '{}'::jsonb, NULL, 30, 30, 'File system MCP server for Windows', 1),
+    ('file_system_unix', 'npx', 
+     '["@modelcontextprotocol/server-filesystem", "${cwd}"]'::jsonb, 
+     '{}'::jsonb, NULL, 30, 30, 'File system MCP server for Unix/Linux', 1),
+    ('file_system', 'node', 
+     '["${userHome}\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\@modelcontextprotocol\\\\server-filesystem\\\\dist\\\\index.js", "${cwd}"]'::jsonb, 
+     '{}'::jsonb, NULL, 10, 10, 'Default file system MCP server', 1);
 
 -- Insert sample prompts
 INSERT INTO prompts (prompt_id, name, category, subcategory, description, agent_id, created_by) VALUES 

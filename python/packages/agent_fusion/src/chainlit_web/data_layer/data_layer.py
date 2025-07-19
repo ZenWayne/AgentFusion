@@ -34,6 +34,8 @@ from chainlit_web.data_layer.models import (
     FeedbackModel,
     LLMModel,
     AgentModel,
+    GroupChatModel,
+    McpModel,
     PersistedUser,
     PersistedUserFields,
     AgentFusionUser
@@ -46,18 +48,10 @@ if TYPE_CHECKING:
 ISO_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 
 
-class AgentFusionDataLayer( 
-    UserModel, 
-    ThreadModel, 
-    StepModel, 
-    ElementModel, 
-    FeedbackModel,
-    LLMModel,
-    AgentModel
-    ):
+class AgentFusionDataLayer(BaseDataLayer):
     """
-    重构后的数据层，使用继承模式整合所有模型
-    直接继承所有模型类，让方法调用更直接
+    重构后的数据层，使用组合模式整合所有模型
+    组合模式避免方法名冲突，提供更清晰的接口
     """
     
     def __init__(
@@ -68,7 +62,7 @@ class AgentFusionDataLayer(
         **kwargs
     ):
         # 先调用BaseDataLayer的初始化
-        BaseDataLayer.__init__(self)
+        super().__init__()
         
         self.database_url = database_url
         self.storage_client = storage_client
@@ -77,14 +71,18 @@ class AgentFusionDataLayer(
         # 创建基础数据库操作层
         self.db_layer = DBDataLayer(database_url, show_logger)
         
-        # 初始化所有模型的基础部分
-        UserModel.__init__(self, self.db_layer)
-        ThreadModel.__init__(self, self.db_layer)
-        StepModel.__init__(self, self.db_layer)
-        ElementModel.__init__(self, self.db_layer)
-        FeedbackModel.__init__(self, self.db_layer)
-        LLMModel.__init__(self, self.db_layer)
-        AgentModel.__init__(self, self.db_layer)
+        # 初始化基础模型（继承的部分）
+        self.user = UserModel(self.db_layer)
+        
+        # 使用组合模式创建组件模型
+        self.llm = LLMModel(self.db_layer)
+        self.agent = AgentModel(self.db_layer)
+        self.group_chat = GroupChatModel(self.db_layer)
+        self.element = ElementModel(self.db_layer)
+        self.feedback = FeedbackModel(self.db_layer)
+        self.step = StepModel(self.db_layer)
+        self.thread = ThreadModel(self.db_layer)
+        self.mcp = McpModel(self.db_layer)
 
     async def connect(self):
         """连接数据库"""
@@ -244,10 +242,6 @@ class AgentFusionDataLayer(
     def _truncate(self, text: Optional[str], max_length: int = 255) -> Optional[str]:
         """截断文本"""
         return self.db_layer._truncate(text, max_length)
-    
-    async def get_model_list(self) -> List[Dict[str, Any]]:
-        """获取模型列表用于聊天设置"""
-        return await self.get_model_labels_for_chat_settings()
 
 
 # 为了向后兼容，导出原有的类

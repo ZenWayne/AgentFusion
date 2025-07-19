@@ -7,99 +7,187 @@
 import json
 import uuid
 from typing import Optional, Dict, Any, List
+from datetime import datetime
+from dataclasses import dataclass
 from chainlit.types import Feedback, FeedbackDict
 from chainlit.logger import logger
 
 from chainlit_web.data_layer.models.base_model import BaseModel
 
+from sqlalchemy import select, insert, update, delete, and_, text, UUID, Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import JSONB
+
+Base = declarative_base()
+
+class FeedbackTable(Base):
+    """SQLAlchemy ORM model for feedbacks table"""
+    __tablename__ = 'feedbacks'
+    
+    id = Column(UUID, primary_key=True, server_default=func.gen_random_uuid())
+    for_id = Column(UUID, nullable=False)
+    thread_id = Column(UUID, ForeignKey('threads.id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(Integer, ForeignKey('User.id', ondelete='SET NULL'))
+    value = Column(Integer, nullable=False)
+    comment = Column(Text)
+    feedback_type = Column(String(50), default='rating')
+    metadata = Column(JSONB, default={})
+    created_at = Column(DateTime, server_default=func.current_timestamp())
+    updated_at = Column(DateTime, server_default=func.current_timestamp())
+
+
+@dataclass
+class FeedbackInfo:
+    """反馈信息数据类"""
+    id: str
+    for_id: str
+    thread_id: str
+    user_id: Optional[int]
+    value: int
+    comment: Optional[str]
+    feedback_type: str
+    metadata: Dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+
 
 class FeedbackModel(BaseModel):
     """反馈数据模型"""
+    
+    def _feedback_to_info(self, feedback: FeedbackTable) -> FeedbackInfo:
+        """Convert SQLAlchemy model to FeedbackInfo"""
+        return FeedbackInfo(
+            id=str(feedback.id),
+            for_id=str(feedback.for_id),
+            thread_id=str(feedback.thread_id),
+            user_id=feedback.user_id,
+            value=feedback.value,
+            comment=feedback.comment,
+            feedback_type=feedback.feedback_type,
+            metadata=feedback.metadata if feedback.metadata else {},
+            created_at=feedback.created_at,
+            updated_at=feedback.updated_at
+        )
+    
+    def _convert_feedback_info_to_dict(self, feedback_info: FeedbackInfo) -> FeedbackDict:
+        """Convert FeedbackInfo to FeedbackDict"""
+        return FeedbackDict(
+            id=feedback_info.id,
+            forId=feedback_info.for_id,
+            value=feedback_info.value,
+            comment=feedback_info.comment,
+        )
     
     async def upsert_feedback(self, feedback: Feedback) -> str:
         """创建或更新反馈"""
         feedback_id = feedback.id or str(uuid.uuid4())
         
-        # 从步骤获取thread_id（如果没有提供的话）
-        thread_id = None
-        if feedback.forId:
-            step_query = """SELECT thread_id FROM steps WHERE id = $1"""
-            step_result = await self.execute_single_query(step_query, [feedback.forId])
-            thread_id = step_result["thread_id"] if step_result else None
-        
-        query = """
-        INSERT INTO feedbacks (id, for_id, thread_id, user_id, value, comment, feedback_type)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        ON CONFLICT (id) DO UPDATE
-        SET value = EXCLUDED.value, comment = EXCLUDED.comment
-        RETURNING id
-        """
-        
-        params = [
-            feedback_id,
-            feedback.forId,
-            thread_id,
-            None,  # user_id 将由认证上下文设置
-            float(feedback.value),
-            feedback.comment,
-            "rating",  # 默认反馈类型
-        ]
-        
-        result = await self.execute_single_query(query, params)
-        return str(result["id"])
+        async with await self.db.get_session() as session:
+            try:
+                # 从步骤获取thread_id（如果没有提供的话）
+                thread_id = None
+                if feedback.forId:
+                    step_result = await session.execute(
+                        text("SELECT thread_id FROM steps WHERE id = :step_id"), 
+                        {'step_id': feedback.forId}
+                    )
+                    step_row = step_result.first()
+                    thread_id = step_row[0] if step_row else None
+                
+                # 检查是否已存在
+                existing_stmt = select(FeedbackTable).where(FeedbackTable.id == feedback_id)
+                existing_result = await session.execute(existing_stmt)
+                existing_feedback = existing_result.scalar_one_or_none()
+                
+                if existing_feedback:
+                    # 更新现有反馈
+                    existing_feedback.value = int(feedback.value)
+                    existing_feedback.comment = feedback.comment
+                    existing_feedback.updated_at = func.current_timestamp()
+                else:
+                    # 创建新反馈
+                    new_feedback = FeedbackTable(
+                        id=feedback_id,
+                        for_id=feedback.forId,
+                        thread_id=thread_id,
+                        user_id=None,  # user_id 将由认证上下文设置
+                        value=int(feedback.value),
+                        comment=feedback.comment,
+                        feedback_type="rating",
+                        metadata={}
+                    )
+                    session.add(new_feedback)
+                
+                await session.commit()
+                return feedback_id
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error upserting feedback: {e}")
+                raise
 
     async def delete_feedback(self, feedback_id: str) -> bool:
         """删除反馈"""
-        query = """
-        DELETE FROM feedbacks WHERE id = $1
-        """
-        await self.execute_command(query, [feedback_id])
-        return True
+        async with await self.db.get_session() as session:
+            try:
+                stmt = delete(FeedbackTable).where(FeedbackTable.id == feedback_id)
+                await session.execute(stmt)
+                await session.commit()
+                return True
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error deleting feedback: {e}")
+                return False
 
     async def get_feedback(self, feedback_id: str) -> Optional[FeedbackDict]:
         """获取反馈详情"""
-        query = """
-        SELECT * FROM feedbacks WHERE id = $1
-        """
-        result = await self.execute_single_query(query, [feedback_id])
-        
-        if not result:
-            return None
-        
-        return self._convert_feedback_row_to_dict(result)
+        async with await self.db.get_session() as session:
+            stmt = select(FeedbackTable).where(FeedbackTable.id == feedback_id)
+            result = await session.execute(stmt)
+            feedback = result.scalar_one_or_none()
+            
+            if not feedback:
+                return None
+            
+            feedback_info = self._feedback_to_info(feedback)
+            return self._convert_feedback_info_to_dict(feedback_info)
 
     async def get_feedbacks_by_step(self, step_id: str) -> List[FeedbackDict]:
         """获取步骤的所有反馈"""
-        query = """
-        SELECT * FROM feedbacks 
-        WHERE for_id = $1
-        ORDER BY created_at DESC
-        """
-        results = await self.execute_query(query, [step_id])
-        
-        return [self._convert_feedback_row_to_dict(row) for row in results]
+        async with await self.db.get_session() as session:
+            stmt = select(FeedbackTable).where(
+                FeedbackTable.for_id == step_id
+            ).order_by(FeedbackTable.created_at.desc())
+            
+            result = await session.execute(stmt)
+            feedbacks = result.scalars().all()
+            
+            return [self._convert_feedback_info_to_dict(self._feedback_to_info(f)) for f in feedbacks]
 
     async def get_feedbacks_by_thread(self, thread_id: str) -> List[FeedbackDict]:
         """获取线程的所有反馈"""
-        query = """
-        SELECT * FROM feedbacks 
-        WHERE thread_id = $1
-        ORDER BY created_at DESC
-        """
-        results = await self.execute_query(query, [thread_id])
-        
-        return [self._convert_feedback_row_to_dict(row) for row in results]
+        async with await self.db.get_session() as session:
+            stmt = select(FeedbackTable).where(
+                FeedbackTable.thread_id == thread_id
+            ).order_by(FeedbackTable.created_at.desc())
+            
+            result = await session.execute(stmt)
+            feedbacks = result.scalars().all()
+            
+            return [self._convert_feedback_info_to_dict(self._feedback_to_info(f)) for f in feedbacks]
 
     async def get_feedbacks_by_user(self, user_id: str) -> List[FeedbackDict]:
         """获取用户的所有反馈"""
-        query = """
-        SELECT * FROM feedbacks 
-        WHERE user_id = $1
-        ORDER BY created_at DESC
-        """
-        results = await self.execute_query(query, [user_id])
-        
-        return [self._convert_feedback_row_to_dict(row) for row in results]
+        async with await self.db.get_session() as session:
+            stmt = select(FeedbackTable).where(
+                FeedbackTable.user_id == int(user_id)
+            ).order_by(FeedbackTable.created_at.desc())
+            
+            result = await session.execute(stmt)
+            feedbacks = result.scalars().all()
+            
+            return [self._convert_feedback_info_to_dict(self._feedback_to_info(f)) for f in feedbacks]
 
     async def get_feedback_statistics(self, thread_id: Optional[str] = None) -> Dict[str, Any]:
         """获取反馈统计信息"""
@@ -253,11 +341,3 @@ class FeedbackModel(BaseModel):
             "std_deviation": 0
         }
 
-    def _convert_feedback_row_to_dict(self, row: Dict) -> FeedbackDict:
-        """将数据库行转换为反馈字典"""
-        return FeedbackDict(
-            id=str(row["id"]),
-            forId=str(row["for_id"]),
-            value=row["value"],
-            comment=row.get("comment"),
-        ) 

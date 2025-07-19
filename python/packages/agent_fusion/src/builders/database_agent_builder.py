@@ -43,8 +43,8 @@ class DatabaseAgentBuilder:
             self.db_model_builder = None
 
     @asynccontextmanager
-    async def build(self, name: str) -> AsyncGenerator[AssistantAgent | UserProxyAgent, None]:
-        agent_info: AssistantAgentConfig| UserProxyAgentConfig = AgentInfo[name]
+    async def build(self, agent_config: AssistantAgentConfig | UserProxyAgentConfig) -> AsyncGenerator[AssistantAgent | UserProxyAgent, None]:
+        agent_info: AssistantAgentConfig| UserProxyAgentConfig = agent_config
 
         user_memory = ListMemory()
         if agent_info.type == AgentType.ASSISTANT_AGENT:
@@ -102,8 +102,8 @@ class AgentBuilder:
         self._input_func: Callable[[str], Awaitable[str]] | None = input_func
 
     @asynccontextmanager
-    async def build(self, name: str) -> AsyncGenerator[AssistantAgent | UserProxyAgent, None]:
-        agent_info: AssistantAgentConfig| UserProxyAgentConfig = AgentInfo[name]
+    async def build(self, agent_config: AssistantAgentConfig | UserProxyAgentConfig) -> AsyncGenerator[AssistantAgent | UserProxyAgent, None]:
+        agent_info: AssistantAgentConfig| UserProxyAgentConfig = agent_config
 
         user_memory = ListMemory()
         if agent_info.type == AgentType.ASSISTANT_AGENT:

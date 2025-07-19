@@ -6,7 +6,8 @@ from .element_model import ElementModel
 from .feedback_model import FeedbackModel
 from .llm_model import LLMModel, LLMModelInfo
 from .agent_model import AgentModel
-
+from .group_chat_model import GroupChatModel, GroupChatInfo
+from .mcp_model import McpModel
 
 __all__ = [
     'BaseModel',
@@ -20,5 +21,8 @@ __all__ = [
     'FeedbackModel',
     'LLMModel',
     'LLMModelInfo',
-    'AgentModel'
+    'AgentModel',
+    'GroupChatModel',
+    'GroupChatInfo',
+    'McpModel'
 ]

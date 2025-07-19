@@ -3,6 +3,7 @@ import asyncpg
 from typing import Optional, Dict, Any, List, Union
 from datetime import datetime
 from chainlit.logger import logger
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 
 class DBDataLayer:
@@ -152,8 +153,24 @@ class DBDataLayer:
             async with connection.transaction():
                 return await func(connection, *args, **kwargs)
 
+    #CR除了这个方法其他的可以去掉了，因为使用了sqlalchemy的orm去执行sql语句
+    async def get_session(self):
+        """Get SQLAlchemy async session using existing connection pool"""
+        
+        if not hasattr(self, '_engine'):
+            # Create async engine using the existing database URL
+            self._engine = create_async_engine(
+                self.database_url.replace('postgresql://', 'postgresql+asyncpg://'),
+                echo=self.show_logger
+            )
+            self._session_factory = async_sessionmaker(self._engine, expire_on_commit=False)
+        
+        return self._session_factory()
+
     async def cleanup(self):
         """清理数据库连接"""
+        if hasattr(self, '_engine'):
+            await self._engine.dispose()
         await self.disconnect()
 
     def _truncate(self, text: Optional[str], max_length: int = 255) -> Optional[str]:

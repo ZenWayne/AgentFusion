@@ -7,259 +7,388 @@
 import json
 import aiofiles
 from typing import Optional, Dict, Any, List, Union, TYPE_CHECKING
+from datetime import datetime
+from dataclasses import dataclass
+
 from chainlit.element import ElementDict
 from chainlit.logger import logger
 
 from chainlit_web.data_layer.models.base_model import BaseModel
 
+from sqlalchemy import select, insert, update, delete, and_, or_, Column, Integer, String, Text, BigInteger, ForeignKey
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.sql import func
+from sqlalchemy.dialects.postgresql import JSONB
+
 if TYPE_CHECKING:
     from chainlit.element import Element
+
+Base = declarative_base()
+
+class ElementTable(Base):
+    """SQLAlchemy ORM model for elements table"""
+    __tablename__ = 'elements'
+    
+    id = Column(String, primary_key=True)
+    thread_id = Column(String, ForeignKey('threads.id'))
+    step_id = Column(String, ForeignKey('steps.id'))
+    metadata = Column(JSONB, default={})
+    mime_type = Column(String)
+    name = Column(String)
+    object_key = Column(String)
+    url = Column(String)
+    chainlit_key = Column(String)
+    display = Column(String)
+    size_bytes = Column(BigInteger)
+    language = Column(String)
+    page_number = Column(Integer)
+    props = Column(JSONB, default={})
+
+@dataclass
+class ElementInfo:
+    """Element信息数据类"""
+    id: str
+    thread_id: Optional[str]
+    step_id: Optional[str]
+    metadata: Dict[str, Any]
+    mime_type: Optional[str]
+    name: Optional[str]
+    object_key: Optional[str]
+    url: Optional[str]
+    chainlit_key: Optional[str]
+    display: Optional[str]
+    size_bytes: Optional[int]
+    language: Optional[str]
+    page_number: Optional[int]
+    props: Dict[str, Any]
 
 
 class ElementModel(BaseModel):
     """元素数据模型"""
+    
+    def _element_to_info(self, element: ElementTable) -> ElementInfo:
+        """Convert SQLAlchemy ElementTable to ElementInfo"""
+        return ElementInfo(
+            id=element.id,
+            thread_id=element.thread_id,
+            step_id=element.step_id,
+            metadata=element.metadata if element.metadata else {},
+            mime_type=element.mime_type,
+            name=element.name,
+            object_key=element.object_key,
+            url=element.url,
+            chainlit_key=element.chainlit_key,
+            display=element.display,
+            size_bytes=element.size_bytes,
+            language=element.language,
+            page_number=element.page_number,
+            props=element.props if element.props else {}
+        )
+    
+    def _element_to_dict(self, element: ElementTable) -> ElementDict:
+        """Convert SQLAlchemy ElementTable to ElementDict"""
+        metadata = element.metadata if element.metadata else {}
+        return ElementDict(
+            id=str(element.id),
+            threadId=str(element.thread_id) if element.thread_id else None,
+            type=metadata.get("type", "file"),
+            url=element.url,
+            name=element.name,
+            mime=element.mime_type,
+            objectKey=element.object_key,
+            forId=str(element.step_id) if element.step_id else None,
+            chainlitKey=element.chainlit_key,
+            display=element.display,
+            size=element.size_bytes,
+            language=element.language,
+            page=element.page_number,
+            autoPlay=metadata.get("autoPlay"),
+            playerConfig=metadata.get("playerConfig"),
+            props=element.props if element.props else {},
+        )
     
     async def create_element(self, element: "Element", storage_client=None):
         """创建元素"""
         if not element.for_id:
             return
 
-        # 检查线程是否存在
-        if element.thread_id:
-            query = 'SELECT id FROM threads WHERE id = $1'
-            results = await self.execute_query(query, [element.thread_id])
-            if not results:
-                # 如果线程不存在，需要先创建（这通常由调用者处理）
+        async with await self.db.get_session() as session:
+            # 检查线程是否存在（如果需要）
+            if element.thread_id:
+                # Note: Thread existence check moved to calling code
                 pass
 
-        # 检查步骤是否存在
-        if element.for_id:
-            query = 'SELECT id FROM steps WHERE id = $1'
-            results = await self.execute_query(query, [element.for_id])
-            if not results:
-                # 如果步骤不存在，需要先创建（这通常由调用者处理）
+            # 检查步骤是否存在（如果需要）
+            if element.for_id:
+                # Note: Step existence check moved to calling code
                 pass
 
-        content: Optional[Union[bytes, str]] = None
+            content: Optional[Union[bytes, str]] = None
 
-        if element.path:
-            async with aiofiles.open(element.path, "rb") as f:
-                content = await f.read()
-        elif element.content:
-            content = element.content
-        elif not element.url:
-            raise ValueError("Element url, path or content must be provided")
+            if element.path:
+                async with aiofiles.open(element.path, "rb") as f:
+                    content = await f.read()
+            elif element.content:
+                content = element.content
+            elif not element.url:
+                raise ValueError("Element url, path or content must be provided")
 
-        # 构建存储路径
-        if element.thread_id:
-            path = f"threads/{element.thread_id}/files/{element.id}"
-        else:
-            path = f"files/{element.id}"
+            # 构建存储路径
+            if element.thread_id:
+                path = f"threads/{element.thread_id}/files/{element.id}"
+            else:
+                path = f"files/{element.id}"
 
-        # 如果有存储客户端，上传文件
-        if content is not None and storage_client:
-            await storage_client.upload_file(
-                object_key=path,
-                data=content,
-                mime=element.mime or "application/octet-stream",
-                overwrite=True,
-            )
+            # 如果有存储客户端，上传文件
+            if content is not None and storage_client:
+                await storage_client.upload_file(
+                    object_key=path,
+                    data=content,
+                    mime=element.mime or "application/octet-stream",
+                    overwrite=True,
+                )
 
-        query = """
-        INSERT INTO elements (
-            id, thread_id, step_id, metadata, mime_type, name, object_key, url,
-            chainlit_key, display, size_bytes, language, page_number, props
-        ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
-        )
-        ON CONFLICT (id) DO UPDATE SET
-            props = EXCLUDED.props
-        """
-        params = [
-            element.id,
-            element.thread_id,
-            element.for_id,
-            json.dumps({
+            # 构建元素数据
+            metadata = {
                 "size": element.size,
                 "language": element.language,
                 "display": element.display,
                 "type": element.type,
                 "page": getattr(element, "page", None),
-            }),
-            element.mime,
-            element.name,
-            path,
-            element.url,
-            element.chainlit_key,
-            element.display,
-            element.size,
-            element.language,
-            getattr(element, "page", None),
-            json.dumps(getattr(element, "props", {})),
-        ]
-        await self.execute_command(query, params)
+            }
+            
+            props = getattr(element, "props", {})
+
+            try:
+                # 首先尝试插入
+                new_element = ElementTable(
+                    id=element.id,
+                    thread_id=element.thread_id,
+                    step_id=element.for_id,
+                    metadata=metadata,
+                    mime_type=element.mime,
+                    name=element.name,
+                    object_key=path,
+                    url=element.url,
+                    chainlit_key=element.chainlit_key,
+                    display=element.display,
+                    size_bytes=element.size,
+                    language=element.language,
+                    page_number=getattr(element, "page", None),
+                    props=props
+                )
+                
+                session.add(new_element)
+                await session.commit()
+                
+            except Exception:
+                # 如果插入失败（冲突），则更新props
+                await session.rollback()
+                
+                stmt = update(ElementTable).where(
+                    ElementTable.id == element.id
+                ).values(props=props)
+                
+                await session.execute(stmt)
+                await session.commit()
 
     async def get_element(
         self, thread_id: str, element_id: str
     ) -> Optional[ElementDict]:
         """获取元素"""
-        query = """
-        SELECT * FROM elements
-        WHERE id = $1 AND thread_id = $2
-        """
-        result = await self.execute_single_query(query, [element_id, thread_id])
-
-        if not result:
-            return None
-
-        return self._convert_element_row_to_dict(result)
+        async with await self.db.get_session() as session:
+            stmt = select(ElementTable).where(and_(
+                ElementTable.id == element_id,
+                ElementTable.thread_id == thread_id
+            ))
+            
+            result = await session.execute(stmt)
+            element = result.scalar_one_or_none()
+            
+            if not element:
+                return None
+            
+            return self._element_to_dict(element)
 
     async def delete_element(self, element_id: str, thread_id: Optional[str] = None):
         """删除元素"""
-        # 先获取元素信息
-        if thread_id:
-            query = """
-            SELECT * FROM elements
-            WHERE id = $1 AND thread_id = $2
-            """
-            element = await self.execute_single_query(query, [element_id, thread_id])
-        else:
-            query = """
-            SELECT * FROM elements
-            WHERE id = $1
-            """
-            element = await self.execute_single_query(query, [element_id])
-
-        # 删除元素
-        if thread_id:
-            delete_query = """
-            DELETE FROM elements 
-            WHERE id = $1 AND thread_id = $2
-            """
-            await self.execute_command(delete_query, [element_id, thread_id])
-        else:
-            delete_query = """
-            DELETE FROM elements 
-            WHERE id = $1
-            """
-            await self.execute_command(delete_query, [element_id])
-
-        return element  # 返回元素信息供存储客户端删除文件
+        async with await self.db.get_session() as session:
+            # 先获取元素信息
+            if thread_id:
+                stmt = select(ElementTable).where(and_(
+                    ElementTable.id == element_id,
+                    ElementTable.thread_id == thread_id
+                ))
+            else:
+                stmt = select(ElementTable).where(
+                    ElementTable.id == element_id
+                )
+            
+            result = await session.execute(stmt)
+            element = result.scalar_one_or_none()
+            
+            if not element:
+                return None
+            
+            # 保存元素信息以便返回
+            element_dict = self._convert_element_row_to_dict({
+                "id": element.id,
+                "thread_id": element.thread_id,
+                "step_id": element.step_id,
+                "metadata": json.dumps(element.metadata if element.metadata else {}),
+                "mime_type": element.mime_type,
+                "name": element.name,
+                "object_key": element.object_key,
+                "url": element.url,
+                "chainlit_key": element.chainlit_key,
+                "display": element.display,
+                "size_bytes": element.size_bytes,
+                "language": element.language,
+                "page_number": element.page_number,
+                "props": json.dumps(element.props if element.props else {})
+            })
+            
+            # 删除元素
+            if thread_id:
+                delete_stmt = delete(ElementTable).where(and_(
+                    ElementTable.id == element_id,
+                    ElementTable.thread_id == thread_id
+                ))
+            else:
+                delete_stmt = delete(ElementTable).where(
+                    ElementTable.id == element_id
+                )
+            
+            await session.execute(delete_stmt)
+            await session.commit()
+            
+            return element_dict  # 返回元素信息供存储客户端删除文件
 
     async def get_elements_by_thread(self, thread_id: str) -> List[ElementDict]:
         """获取线程的所有元素"""
-        query = """
-        SELECT * FROM elements 
-        WHERE thread_id = $1
-        ORDER BY id
-        """
-        results = await self.execute_query(query, [thread_id])
-        
-        return [self._convert_element_row_to_dict(row) for row in results]
+        async with await self.db.get_session() as session:
+            stmt = select(ElementTable).where(
+                ElementTable.thread_id == thread_id
+            ).order_by(ElementTable.id)
+            
+            result = await session.execute(stmt)
+            elements = result.scalars().all()
+            
+            return [self._element_to_dict(element) for element in elements]
 
     async def get_elements_by_step(self, step_id: str) -> List[ElementDict]:
         """获取步骤的所有元素"""
-        query = """
-        SELECT * FROM elements 
-        WHERE step_id = $1
-        ORDER BY id
-        """
-        results = await self.execute_query(query, [step_id])
-        
-        return [self._convert_element_row_to_dict(row) for row in results]
+        async with await self.db.get_session() as session:
+            stmt = select(ElementTable).where(
+                ElementTable.step_id == step_id
+            ).order_by(ElementTable.id)
+            
+            result = await session.execute(stmt)
+            elements = result.scalars().all()
+            
+            return [self._element_to_dict(element) for element in elements]
 
     async def get_elements_by_type(self, element_type: str, thread_id: Optional[str] = None) -> List[ElementDict]:
         """根据类型获取元素"""
-        query = """
-        SELECT * FROM elements 
-        WHERE metadata->>'type' = $1
-        """
-        params = [element_type]
-        
-        if thread_id:
-            query += " AND thread_id = $2"
-            params.append(thread_id)
-        
-        query += " ORDER BY id"
-        
-        results = await self.execute_query(query, params)
-        return [self._convert_element_row_to_dict(row) for row in results]
+        async with await self.db.get_session() as session:
+            stmt = select(ElementTable).where(
+                ElementTable.metadata['type'].astext == element_type
+            )
+            
+            if thread_id:
+                stmt = stmt.where(ElementTable.thread_id == thread_id)
+                
+            stmt = stmt.order_by(ElementTable.id)
+            
+            result = await session.execute(stmt)
+            elements = result.scalars().all()
+            
+            return [self._element_to_dict(element) for element in elements]
 
     async def update_element_url(self, element_id: str, url: str):
         """更新元素URL"""
-        query = """
-        UPDATE elements 
-        SET url = $1
-        WHERE id = $2
-        """
-        await self.execute_command(query, [url, element_id])
+        async with await self.db.get_session() as session:
+            stmt = update(ElementTable).where(
+                ElementTable.id == element_id
+            ).values(url=url)
+            
+            await session.execute(stmt)
+            await session.commit()
 
     async def update_element_props(self, element_id: str, props: Dict[str, Any]):
         """更新元素属性"""
-        query = """
-        UPDATE elements 
-        SET props = $1
-        WHERE id = $2
-        """
-        await self.execute_command(query, [json.dumps(props), element_id])
+        async with await self.db.get_session() as session:
+            stmt = update(ElementTable).where(
+                ElementTable.id == element_id
+            ).values(props=props)
+            
+            await session.execute(stmt)
+            await session.commit()
 
     async def get_element_statistics(self, thread_id: Optional[str] = None) -> Dict[str, Any]:
         """获取元素统计信息"""
-        base_query = """
-        SELECT 
-            COUNT(*) as total_elements,
-            COUNT(DISTINCT mime_type) as unique_mime_types,
-            SUM(size_bytes) as total_size_bytes,
-            AVG(size_bytes) as avg_size_bytes
-        FROM elements
-        """
-        params = []
-        
-        if thread_id:
-            base_query += " WHERE thread_id = $1"
-            params.append(thread_id)
-        
-        result = await self.execute_single_query(base_query, params)
-        return dict(result) if result else {
-            "total_elements": 0,
-            "unique_mime_types": 0,
-            "total_size_bytes": 0,
-            "avg_size_bytes": 0
-        }
+        async with await self.db.get_session() as session:
+            stmt = select(
+                func.count().label('total_elements'),
+                func.count(func.distinct(ElementTable.mime_type)).label('unique_mime_types'),
+                func.sum(ElementTable.size_bytes).label('total_size_bytes'),
+                func.avg(ElementTable.size_bytes).label('avg_size_bytes')
+            )
+            
+            if thread_id:
+                stmt = stmt.where(ElementTable.thread_id == thread_id)
+            
+            result = await session.execute(stmt)
+            row = result.first()
+            
+            if not row:
+                return {
+                    "total_elements": 0,
+                    "unique_mime_types": 0,
+                    "total_size_bytes": 0,
+                    "avg_size_bytes": 0
+                }
+            
+            return {
+                "total_elements": row[0] or 0,
+                "unique_mime_types": row[1] or 0,
+                "total_size_bytes": row[2] or 0,
+                "avg_size_bytes": float(row[3]) if row[3] else 0.0
+            }
 
     async def get_elements_by_mime_type(self, mime_type: str, thread_id: Optional[str] = None) -> List[ElementDict]:
         """根据MIME类型获取元素"""
-        query = """
-        SELECT * FROM elements 
-        WHERE mime_type = $1
-        """
-        params = [mime_type]
-        
-        if thread_id:
-            query += " AND thread_id = $2"
-            params.append(thread_id)
-        
-        query += " ORDER BY id"
-        
-        results = await self.execute_query(query, params)
-        return [self._convert_element_row_to_dict(row) for row in results]
+        async with await self.db.get_session() as session:
+            stmt = select(ElementTable).where(
+                ElementTable.mime_type == mime_type
+            )
+            
+            if thread_id:
+                stmt = stmt.where(ElementTable.thread_id == thread_id)
+                
+            stmt = stmt.order_by(ElementTable.id)
+            
+            result = await session.execute(stmt)
+            elements = result.scalars().all()
+            
+            return [self._element_to_dict(element) for element in elements]
 
     async def search_elements(self, search_term: str, thread_id: Optional[str] = None) -> List[ElementDict]:
         """搜索元素"""
-        query = """
-        SELECT * FROM elements 
-        WHERE name ILIKE $1
-        """
-        params = [f"%{search_term}%"]
-        
-        if thread_id:
-            query += " AND thread_id = $2"
-            params.append(thread_id)
-        
-        query += " ORDER BY id"
-        
-        results = await self.execute_query(query, params)
-        return [self._convert_element_row_to_dict(row) for row in results]
+        async with await self.db.get_session() as session:
+            stmt = select(ElementTable).where(
+                ElementTable.name.ilike(f"%{search_term}%")
+            )
+            
+            if thread_id:
+                stmt = stmt.where(ElementTable.thread_id == thread_id)
+                
+            stmt = stmt.order_by(ElementTable.id)
+            
+            result = await session.execute(stmt)
+            elements = result.scalars().all()
+            
+            return [self._element_to_dict(element) for element in elements]
 
     def _convert_element_row_to_dict(self, row: Dict) -> ElementDict:
         """将数据库行转换为元素字典"""
