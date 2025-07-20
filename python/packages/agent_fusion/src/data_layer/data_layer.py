@@ -25,8 +25,8 @@ from chainlit.types import (
 from chainlit.user import User
 
 # 导入基础数据层和所有模型
-from chainlit_web.data_layer.base_data_layer import DBDataLayer
-from chainlit_web.data_layer.models import (
+from data_layer.base_data_layer import DBDataLayer
+from data_layer.models import (
     UserModel, 
     ThreadModel, 
     StepModel, 
@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from chainlit.step import StepDict
 
 ISO_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
+
 
 
 class AgentFusionDataLayer(BaseDataLayer):
@@ -243,7 +244,7 @@ class AgentFusionDataLayer(BaseDataLayer):
         """截断文本"""
         return self.db_layer._truncate(text, max_length)
 
-
+database_layer: Optional[AgentFusionDataLayer] = None
 # 为了向后兼容，导出原有的类
 __all__ = [
     'AgentFusionDataLayer',

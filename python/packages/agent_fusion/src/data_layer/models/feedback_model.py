@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from chainlit.types import Feedback, FeedbackDict
 from chainlit.logger import logger
 
-from chainlit_web.data_layer.models.base_model import BaseModel
+from data_layer.models.base_model import BaseModel
 
 from sqlalchemy import select, insert, update, delete, and_, text, UUID, Column, Integer, String, Text, DateTime, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
@@ -33,7 +33,7 @@ class FeedbackTable(Base):
     value = Column(Integer, nullable=False)
     comment = Column(Text)
     feedback_type = Column(String(50), default='rating')
-    metadata = Column(JSONB, default={})
+    feedback_metadata = Column(JSONB, default={})
     created_at = Column(DateTime, server_default=func.current_timestamp())
     updated_at = Column(DateTime, server_default=func.current_timestamp())
 
@@ -66,7 +66,7 @@ class FeedbackModel(BaseModel):
             value=feedback.value,
             comment=feedback.comment,
             feedback_type=feedback.feedback_type,
-            metadata=feedback.metadata if feedback.metadata else {},
+            metadata=feedback.feedback_metadata if feedback.feedback_metadata else {},
             created_at=feedback.created_at,
             updated_at=feedback.updated_at
         )

@@ -12,7 +12,7 @@ from chainlit.step import StepDict
 from chainlit.types import FeedbackDict
 from chainlit.logger import logger
 
-from chainlit_web.data_layer.models.base_model import BaseModel
+from data_layer.models.base_model import BaseModel
 
 from sqlalchemy import select, insert, update, delete, and_, Column, String, Text, Boolean, DateTime, text
 from sqlalchemy.ext.declarative import declarative_base
@@ -35,7 +35,7 @@ class StepsTable(Base):
     thread_id = Column(String)
     parent_id = Column(String)
     input = Column(Text)
-    metadata = Column(JSONB, default={})
+    step_metadata = Column(JSONB, default={})
     name = Column(String)
     output = Column(Text)
     type = Column(String, nullable=False)
@@ -76,7 +76,7 @@ class StepModel(BaseModel):
             thread_id=model.thread_id,
             parent_id=model.parent_id,
             input=model.input,
-            metadata=model.metadata if model.metadata else {},
+            metadata=model.step_metadata if model.step_metadata else {},
             name=model.name,
             output=model.output,
             type=model.type,
@@ -122,7 +122,7 @@ class StepModel(BaseModel):
                     if step_dict.get("input") is not None:
                         existing_step.input = step_dict["input"]
                     if step_dict.get("metadata") and step_dict["metadata"] != {}:
-                        existing_step.metadata = step_dict["metadata"]
+                        existing_step.step_metadata = step_dict["metadata"]
                     if step_dict.get("name") is not None:
                         existing_step.name = step_dict["name"]
                     if step_dict.get("output") is not None:

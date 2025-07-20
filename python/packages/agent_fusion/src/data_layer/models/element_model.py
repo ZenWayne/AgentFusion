@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from chainlit.element import ElementDict
 from chainlit.logger import logger
 
-from chainlit_web.data_layer.models.base_model import BaseModel
+from data_layer.models.base_model import BaseModel
 
 from sqlalchemy import select, insert, update, delete, and_, or_, Column, Integer, String, Text, BigInteger, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
@@ -32,7 +32,7 @@ class ElementTable(Base):
     id = Column(String, primary_key=True)
     thread_id = Column(String, ForeignKey('threads.id'))
     step_id = Column(String, ForeignKey('steps.id'))
-    metadata = Column(JSONB, default={})
+    element_metadata = Column(JSONB, default={})
     mime_type = Column(String)
     name = Column(String)
     object_key = Column(String)
@@ -72,7 +72,7 @@ class ElementModel(BaseModel):
             id=element.id,
             thread_id=element.thread_id,
             step_id=element.step_id,
-            metadata=element.metadata if element.metadata else {},
+            metadata=element.element_metadata if element.element_metadata else {},
             mime_type=element.mime_type,
             name=element.name,
             object_key=element.object_key,
@@ -87,7 +87,7 @@ class ElementModel(BaseModel):
     
     def _element_to_dict(self, element: ElementTable) -> ElementDict:
         """Convert SQLAlchemy ElementTable to ElementDict"""
-        metadata = element.metadata if element.metadata else {}
+        metadata = element.element_metadata if element.element_metadata else {}
         return ElementDict(
             id=str(element.id),
             threadId=str(element.thread_id) if element.thread_id else None,
@@ -235,7 +235,7 @@ class ElementModel(BaseModel):
                 "id": element.id,
                 "thread_id": element.thread_id,
                 "step_id": element.step_id,
-                "metadata": json.dumps(element.metadata if element.metadata else {}),
+                "metadata": json.dumps(element.element_metadata if element.element_metadata else {}),
                 "mime_type": element.mime_type,
                 "name": element.name,
                 "object_key": element.object_key,
@@ -292,7 +292,7 @@ class ElementModel(BaseModel):
         """根据类型获取元素"""
         async with await self.db.get_session() as session:
             stmt = select(ElementTable).where(
-                ElementTable.metadata['type'].astext == element_type
+                ElementTable.element_metadata['type'].astext == element_type
             )
             
             if thread_id:

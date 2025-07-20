@@ -15,7 +15,7 @@ from chainlit.user import User
 from chainlit.logger import logger
 from dataclasses import dataclass
 
-from chainlit_web.data_layer.models.base_model import BaseModel
+from data_layer.models.base_model import BaseModel
 
 from sqlalchemy import select, insert, update, delete, and_, Column, Integer, String, Text, Boolean, DateTime, UUID as SQLAlchemyUUID
 from sqlalchemy.ext.declarative import declarative_base
@@ -45,7 +45,7 @@ class UserTable(Base):
     last_login = Column(DateTime)
     created_at = Column(DateTime, server_default=func.current_timestamp())
     updated_at = Column(DateTime, server_default=func.current_timestamp())
-    metadata = Column(JSONB, default={})
+    user_metadata = Column(JSONB, default={})
 
 
 @dataclass
@@ -67,7 +67,7 @@ class UserInfo:
     last_login: Optional[datetime]
     created_at: datetime
     updated_at: datetime
-    metadata: Dict[str, Any]
+    user_metadata: Dict[str, Any]
 
 
 @dataclass
@@ -138,7 +138,7 @@ class AgentFusionUser(PersistedUser):
     
     @property
     def email(self) -> Optional[str]:
-        return self.metadata.get("email")
+        return self.user_metadata.get("email")
     
     @property
     def role(self) -> str:

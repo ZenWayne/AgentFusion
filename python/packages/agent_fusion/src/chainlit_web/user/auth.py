@@ -8,26 +8,25 @@ import asyncio
 import asyncpg
 import chainlit as cl
 import os
-from ..data_layer.data_layer import AgentFusionDataLayer, AgentFusionUser, PersistedUser
+from data_layer.data_layer import AgentFusionDataLayer, AgentFusionUser, database_layer
 from starlette.requests import cookie_parser
 from chainlit.auth.cookie import get_token_from_cookies
 import jwt as pyjwt
-
 # Initialize database auth handler
 # Use 'db' for Docker Compose, 'localhost' for local development
 
 # Create global data layer instance
-data_layer_instance: Optional[AgentFusionDataLayer] = None
+
 
 @cl.data_layer
 def get_data_layer() -> AgentFusionDataLayer:
     """Get the AgentFusionDataLayer instance"""
-    global data_layer_instance
-    if data_layer_instance is None:
+    global database_layer
+    if database_layer is None:
         database_url = os.getenv("DATABASE_URL")
         # AgentFusionDataLayer uses database_url directly (inherits from ChainlitDataLayer)
-        data_layer_instance = AgentFusionDataLayer(database_url=database_url)
-    return data_layer_instance
+        database_layer = AgentFusionDataLayer(database_url=database_url)
+    return database_layer
 
 @cl.oauth_callback
 def oauth_callback(

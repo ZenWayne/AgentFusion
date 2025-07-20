@@ -1,6 +1,7 @@
 from .model_info import ModelClientConfig
 from .agent import AssistantAgentConfig, UserProxyAgentConfig, AgentType, InputFuncType  
-from .component import ComponentType, Component
+from .types import ComponentType
+from .component import Component
 
 __all__ = [
     "ModelClientConfig", 

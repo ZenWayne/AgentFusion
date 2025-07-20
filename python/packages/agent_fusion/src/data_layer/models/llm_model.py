@@ -1,0 +1,102 @@
+"""
+LLM模型类
+
+处理LLM模型相关的所有数据库操作，从model_clients表加载模型信息
+"""
+
+import json
+from typing import Optional, Dict, Any, List
+from datetime import datetime
+from dataclasses import dataclass
+
+from data_layer.models.base_model import BaseModel, ComponentModel, BaseComponentTable
+from schemas.model_info import ModelClientConfig
+from builders.model_builder import ModelClientBuilder
+from schemas.types import ComponentType
+from sqlalchemy import select, insert, update, and_, UUID, Column, Integer, String, Text, Boolean, DateTime
+from sqlalchemy.sql import func
+from sqlalchemy.dialects.postgresql import JSONB
+
+class ModelClientTable(BaseComponentTable):
+    """SQLAlchemy ORM model for model_clients table"""
+    __tablename__ = 'model_clients'
+    
+    client_uuid = Column(UUID, unique=True, server_default=func.gen_random_uuid())
+    label = Column(String(255), nullable=False, unique=True)
+    provider = Column(String(500), nullable=False)
+    component_type_id = Column(Integer)
+    version = Column(Integer, default=1)
+    component_version = Column(Integer, default=1)
+    model_name = Column(String(255))
+    base_url = Column(String(500))
+    api_key_hash = Column(String(255))
+    model_info = Column(JSONB, default={})
+
+class LLMModel(ComponentModel, ModelClientBuilder):
+    """LLM模型数据模型"""
+    table_class = ModelClientTable
+    uuid_column_name = "client_uuid"
+    name_column_name = "label"
+    
+    async def to_component_info(self, model: ModelClientTable) -> ModelClientConfig:
+        """Convert SQLAlchemy model to ModelClientConfig"""
+        return ModelClientConfig(
+            type=ComponentType.LLM,
+            label=model.label,
+            model_name=model.model_name or "",
+            base_url=model.base_url or "",
+            family=model.model_info.get("family", "unknown") if model.model_info else "unknown",
+            api_key_type=model.config.get("api_key_type", "") if model.config else "",
+            stream=model.config.get("stream", True) if model.config else True
+        )
+    
+    async def _update_model_client(self, model_id: int, **kwargs) -> bool:
+        """更新模型客户端（内部方法）"""
+        async with await self.db.get_session() as session:
+            try:
+                stmt = select(ModelClientTable).where(ModelClientTable.id == model_id)
+                result = await session.execute(stmt)
+                model = result.scalar_one_or_none()
+                
+                if not model:
+                    return False
+                
+                # Update fields
+                for field, value in kwargs.items():
+                    if hasattr(model, field):
+                        setattr(model, field, value)
+                
+                # Update timestamp
+                model.updated_at = func.current_timestamp()
+                
+                await session.commit()
+                return True
+            except Exception as e:
+                await session.rollback()
+                print(f"Error updating model client: {e}")
+                return False
+    
+    async def update_component_by_id(self, component_id: int, model_config: ModelClientConfig) -> Optional[ModelClientConfig]:
+        """根据组件主键ID更新组件信息"""
+        # 准备更新数据
+        update_data = {
+            "label": model_config.label,
+            "model_name": model_config.model_name,
+            "base_url": model_config.base_url,
+            "model_info": {"family": model_config.family},
+            "config": {
+                "api_key_type": model_config.api_key_type,
+                "stream": model_config.stream
+            }
+        }
+        
+        update_success = await self._update_model_client(component_id, **update_data)
+        
+        if not update_success:
+            return None
+        
+        updated_model = await self.get_component_by_id(component_id)
+        if not updated_model:
+            return None
+        
+        return updated_model

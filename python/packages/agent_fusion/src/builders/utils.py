@@ -1,6 +1,7 @@
 import json
 from autogen_ext.tools.mcp import McpServerParams, StdioServerParams, SseServerParams
-from schemas.agent import ComponentInfo, AgentType, AssistantAgentConfig, UserProxyAgentConfig
+from schemas.component import ComponentInfo
+from schemas.agent import AgentType, AssistantAgentConfig, UserProxyAgentConfig
 from schemas.graph_flow import GraphFlowConfig
 from schemas.group_chat import SelectorGroupChatConfig
 from base.utils import get_prompt, parse_cwd_placeholders

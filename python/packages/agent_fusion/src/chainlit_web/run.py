@@ -16,19 +16,16 @@ from autogen_agentchat.ui import Console
 from aglogger import enable_autogen_logger, FilterType, enable_chainlit_logger
 from chainlit.input_widget import Select, Switch, Slider
 from chainlit_web import user
-from chainlit_web.user.auth import get_data_layer, data_layer_instance
+from chainlit_web.user.auth import get_data_layer
+from data_layer.data_layer import database_layer
 from chainlit_web.users import User, UserSessionManager
-from chainlit.config import config
-from contextlib import asynccontextmanager
-from chainlit_web.data_layer.models.agent_model import AgentModel
-from chainlit_web.data_layer.models.llm_model import LLMModel
+
 from schemas.model_info import ModelClientConfig
 
 MODEL_WIDGET_ID = "Model"
 
 # TODO: Import get_weather function from appropriate module
 # from your_weather_module import get_weather
-
 
 @dataclasses.dataclass
 class MessageChunk:
@@ -44,61 +41,8 @@ message_chunks: Dict[str, Message] = {}
 
 @cl.set_chat_profiles
 async def chat_profile():
-    try:
-        # 从数据库获取可用的agents和group_chats
-        agents = await data_layer_instance.agent.get_all_components()
-        group_chats = await data_layer_instance.group_chat.get_all_components()
-        
-        profiles = []
-        
-        # 添加Agent选项
-        for agent_name, agent_info in agents.items():
-            profiles.append(cl.ChatProfile(
-                name=agent_name,
-                markdown_description=f"**Agent**: {agent_info.description}",
-                icon="https://picsum.photos/200",
-            ))
-        
-        # 添加GroupChat选项
-        for group_name, group_info in group_chats.items():
-            profiles.append(cl.ChatProfile(
-                name=group_name,
-                markdown_description=f"**Group Chat**: {group_info.get('description', 'Group conversation')}",
-                icon="https://picsum.photos/250",
-            ))
-        
-        # 如果没有从数据库获取到任何配置，使用默认配置
-        if not profiles:
-            profiles = [
-                cl.ChatProfile(
-                    name="hil",
-                    markdown_description="**Default Group Chat**: Human-in-the-loop conversation",
-                    icon="https://picsum.photos/200",
-                ),
-            ]
-        
-        return profiles
-        
-    except Exception as e:
-        print(f"Error loading chat profiles: {e}")
-        # 发生错误时返回默认配置
-        return [
-            cl.ChatProfile(
-                name="hil",
-                markdown_description="**Default Group Chat**: Human-in-the-loop conversation",
-                icon="https://picsum.photos/200",
-            ),
-        ]
-
-async def wrap_input(prompt: str, token: CancellationToken) -> str:
-    message_queue = cast(asyncio.Queue[str], cl.user_session.get("message_queue"))  # type: ignore
-    print(f"message_queue: {message_queue}")
-    ready = cast(bool, cl.user_session.get("ready"))
-    print(f"ready: {ready}")
-    if not ready:
-        cl.user_session.set("ready", True)
-    message = await message_queue.get()
-    return message
+    current_user = User()
+    return await current_user.set_chat_profiles(database_layer)
 
 @cl.on_app_startup
 async def on_app_startup() -> None:
@@ -107,65 +51,27 @@ async def on_app_startup() -> None:
     # config.run.host = "e73cd5b88ea8.ngrok-free.app"
     enable_chainlit_logger()
     enable_autogen_logger(["autogen_core.events"], filter_types=[FilterType.ToolCall, FilterType.LLMCall])
-    global data_layer_instance
-    data_layer_instance=get_data_layer()
+    global database_layer
+    database_layer=get_data_layer()
     
     # Initialize component_info_map in UserSessionManager (only once)
     user_session_manager = UserSessionManager()
-    await user_session_manager.initialize_component_info_map(data_layer_instance)
+    await user_session_manager.initialize_component_info_map(database_layer)
     User.user_session_manager = user_session_manager    
     print("on_app_startup")
 
 @cl.on_settings_update
-async def setup_agent(settings: cl.ChatSettings):
+async def settings_update(settings: cl.ChatSettings):
     """当设置更新时，根据选择的聊天配置更新Agent"""
-    try:
-        current_user = User()
-        
-        # 处理模型选择
-        model_widget = next((widget for widget in settings.inputs if widget.id == MODEL_WIDGET_ID), None)
-        if model_widget:
-            model_name = model_widget.initial
-            print(f"Selected model: {model_name}")
-            current_user.current_model_client = await data_layer_instance.llm.get_component_by_name(model_name)
-        
-        # 获取当前聊天配置
-        chat_profile = cl.user_session.get("chat_profile")
-        if not chat_profile:
-            return
-        
-        # 检查是否需要切换Agent/GroupChat
-        current_component_name = current_user.current_component_name
-        
-        if current_component_name != chat_profile:
-            # 需要切换，先清理当前的聊天
-            await current_user.cleanup_current_chat()
-            
-            # 使用已设置的model_client设置新组件
-            await current_user.setup_new_component(chat_profile, data_layer_instance)
-            
-            # 通知用户切换完成
-            await cl.Message(
-                content=f"已切换到 {chat_profile}",
-                author="System"
-            ).send()
-        
-        # 更新其他设置
-        current_user.settings.update(settings)
-        
-    except Exception as e:
-        print(f"Error in setup_agent: {e}")
-        await cl.Message(
-            content=f"切换失败: {str(e)}",
-            author="System"
-        ).send()
+    current_user = User()
+    await current_user.settings_update(settings, database_layer)
 
 async def chat_settings():
-     model_list : list[ModelClientConfig] = await data_layer_instance.llm.get_all_components()
-     
-     # 缓存model_list到UserSessionManager
-     if User.user_session_manager:
-         User.user_session_manager.cache_model_list(model_list)
+     model_list= User.user_session_manager.get_model_list()
+         
+     if not model_list:
+        model_list : list[ModelClientConfig] = await database_layer.llm.get_all_components()
+        User.user_session_manager.cache_model_list(model_list)
      
      return await cl.ChatSettings(
         [Select(
@@ -174,24 +80,21 @@ async def chat_settings():
                 values=[model.label for model in model_list],
                 initial_index=0,
             )]
-        )
+        ).send()
 
 @cl.on_chat_start  # type: ignore
 async def start_chat() -> None:
     """this function will called every time user start a session to chat"""
     # Load model configuration and create the model client.
     print("start_chat")
-    load_info()
-    
-    user = cl.user_session.get("user")
-    chat_profile: str = cl.user_session.get("chat_profile")
-    await cl.Message(
-        content=f"starting chat with {user.identifier} using the {chat_profile} chat profile"
-    ).send()
-    await chat_settings()
+    await chat_settings() 
+    current_user = User()   
+    await current_user.start_chat()
 
+@cl.on_stop
+async def on_stop() -> None:
     current_user = User()
-    await current_user.start_chat(chat_profile, data_layer_instance)
+    await current_user.signal_close()
 
 @cl.on_message  # type: ignore
 async def chat(message: cl.Message) -> None:

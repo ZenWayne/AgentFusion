@@ -1,5 +1,5 @@
 from asyncio import Queue
-from typing import Any, Awaitable, Callable, List, Tuple, cast, Optional
+from typing import Any, Awaitable, Callable, List, Tuple, cast, Optional, Type
 from autogen_core.model_context import ChatCompletionContext
 from autogen_agentchat.teams._group_chat._selector_group_chat import SelectorGroupChatManager
 from autogen_agentchat.teams import SelectorGroupChat
@@ -27,6 +27,10 @@ import chainlit as cl
 from builders.group_chat_builder import GroupChatBuilder as GroupChatBuilderBase
 from autogen_core.models import ChatCompletionClient
 from autogen_core import SingleThreadedAgentRuntime
+from builders.model_builder import ModelClientBuilder
+from data_layer.data_layer import AgentFusionDataLayer
+from data_layer.models.llm_model import LLMModel
+from data_layer.models.prompt_model import PromptModel
 
 ## ref from python\packages\autogen-core\src\autogen_core\_message_context.py
 
@@ -196,9 +200,20 @@ class UISelectorGroupChat(SelectorGroupChat):
             UISelectorGroupChatAgentChatContainer(parent_topic_type, output_topic_type, agent, message_factory)
 
 class UISelectorGroupChatBuilder(GroupChatBuilderBase):
-    def __init__(self, prompt_root: str, input_func: Callable[[str], Awaitable[str]] | None = input, model_client_streaming: bool = False):
-        super().__init__(prompt_root, input_func)
+    def __init__(self, 
+                 data_layer: AgentFusionDataLayer,
+                 input_func: Callable[[str], Awaitable[str]] | None = input, 
+                 model_client_streaming: bool = True
+        ):
+        super().__init__(input_func)
         self._model_client_streaming = model_client_streaming
+        self._data_layer = data_layer
+
+    def prompt_builder(self) -> PromptModel:
+        return PromptModel(self._data_layer) #type: ignore
+
+    def model_client_builder(self) -> ModelClientBuilder:
+        return LLMModel(self._data_layer)
 
     def _create_selector_group_chat(
         self, 

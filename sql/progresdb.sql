@@ -146,7 +146,7 @@ CREATE TABLE threads (
     user_id INTEGER NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
     user_identifier TEXT, -- Legacy compatibility field
     tags TEXT[],
-    metadata JSONB DEFAULT '{}',
+    thread_metadata JSONB DEFAULT '{}',
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP,
@@ -163,7 +163,7 @@ CREATE TABLE steps (
     streaming BOOLEAN NOT NULL DEFAULT FALSE,
     wait_for_answer BOOLEAN DEFAULT FALSE,
     is_error BOOLEAN DEFAULT FALSE,
-    metadata JSONB DEFAULT '{}',
+    step_metadata JSONB DEFAULT '{}',
     tags TEXT[],
     input TEXT,
     output TEXT,
@@ -194,6 +194,7 @@ CREATE TABLE elements (
     language TEXT,
     for_id UUID, -- Reference to related element
     mime_type TEXT,
+    element_metadata JSONB DEFAULT '{}',
     props JSONB DEFAULT '{}',
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -209,7 +210,7 @@ CREATE TABLE feedbacks (
     value INTEGER NOT NULL, -- Rating value (e.g., 1-5, -1/1, etc.)
     comment TEXT,
     feedback_type VARCHAR(50) DEFAULT 'rating', -- rating, thumbs, stars, etc.
-    metadata JSONB DEFAULT '{}',
+    feedback_metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -246,6 +247,7 @@ CREATE TABLE agents (
     component_type_id INTEGER REFERENCES component_types(id),
     version INTEGER DEFAULT 1,
     component_version INTEGER DEFAULT 1,
+    --CR add mcp related fields ref to mcp_servers, it will reference to multiple mcp_servers row
     description TEXT,
     model_client_id INTEGER REFERENCES model_clients(id),
     config JSONB DEFAULT '{}', -- Store agent configuration
@@ -304,10 +306,11 @@ CREATE TABLE prompts (
     prompt_uuid UUID UNIQUE DEFAULT gen_random_uuid(), -- External identifier
     prompt_id VARCHAR(100) NOT NULL UNIQUE, -- Business identifier
     name VARCHAR(255) NOT NULL,
-    category VARCHAR(100), -- e.g., 'agent', 'group_chat', 'ui_design'
-    subcategory VARCHAR(100), -- e.g., 'prd_pt', 'ui_designer_pt'
+    category VARCHAR(100), -- e.g., 'agent', 'group_chat', 'graph_flow'
+    subcategories TEXT[] DEFAULT '{}', -- e.g., 'prd_pt', 'ui_designer_pt'
     description TEXT,
     agent_id INTEGER REFERENCES agents(id),
+    group_chat_id INTEGER REFERENCES group_chats(id),
     created_by INTEGER REFERENCES "User"(id),
     updated_by INTEGER REFERENCES "User"(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

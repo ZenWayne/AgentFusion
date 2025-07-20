@@ -18,4 +18,4 @@ class SelectorGroupChatConfig(BaseGroupChatConfig):
     participants: list[str]
     model_client: model_client_label
 
-ComponentInfo = Annotated[SelectorGroupChatConfig, Field(discriminator="type")]
+# ComponentInfo moved to schemas.component for unified component interface

@@ -1,21 +1,33 @@
-from schemas.group_chat import ComponentInfo, GroupChatType, SelectorGroupChatConfig
+from schemas.component import ComponentInfo
+from schemas.group_chat import GroupChatType, SelectorGroupChatConfig
 from autogen_agentchat.teams import BaseGroupChat,SelectorGroupChat
-from model_client import ModelClient
+from builders.model_builder import ModelClientBuilder
 from base.utils import get_prompt
 from builders.agent_builder import AgentBuilder
 import json
 from contextlib import asynccontextmanager, AsyncExitStack
-from typing import AsyncGenerator, Callable, Awaitable, abstractmethod
+from typing import AsyncGenerator, Callable, Awaitable, abstractmethod, TypeVar, Generic, Type
 import asyncio
 from builders.utils import GroupChatInfo
 from autogen_core.models import ChatCompletionClient
 from autogen_agentchat.base import ChatAgent
-from autogen_ext.models.openai import OpenAIChatCompletionClient
+from schemas.model_info import model_client as model_client_label
+from builders.prompt_builder import PromptBuilder
+from schemas.types import ComponentType
 
 class GroupChatBuilder:
-    def __init__(self, prompt_root: str, input_func: Callable[[str], Awaitable[str]] | None = input):
-        self._prompt_root: str = prompt_root
+    def __init__(
+        self,
+        #CR use callable[[str], Awaitable[str]]
+        input_func: Callable[[str], Awaitable[str]] | None = input
+    ):
         self._input_func: Callable[[str], Awaitable[str]] | None = input_func
+
+    def model_client_builder(self) -> ModelClientBuilder:
+        return ModelClientBuilder()
+
+    def prompt_builder(self) -> PromptBuilder:
+        return PromptBuilder()
 
     def _create_selector_group_chat(
         self, 
@@ -32,18 +44,22 @@ class GroupChatBuilder:
         return _factory
 
     @asynccontextmanager
-    async def build(self, name: str) -> AsyncGenerator[BaseGroupChat, None]:
-        group_chat_info: ComponentInfo = GroupChatInfo[name]
+    async def build(self, group_chat_info: SelectorGroupChatConfig) -> AsyncGenerator[BaseGroupChat, None]:
         
         agent_builder = AgentBuilder(self._input_func)
         async with AsyncExitStack() as stack:
+            # 使用泛型类型创建 model_client_builder 实例
+            model_client_builder: ModelClientBuilder = self.model_client_builder()
+            model_client_config = model_client_builder.get_component_by_name(group_chat_info.model_client)
+            model_client = await stack.enter_async_context(model_client_builder.build(model_client_config))
+            
             participants = await asyncio.gather(
                 *[stack.enter_async_context(agent_builder.build(participant)) 
                 for participant in group_chat_info.participants]
             )
+            prompt_builder: PromptBuilder = self.prompt_builder()
+            selector_prompt = prompt_builder.get_prompt_by_catagory_and_name(ComponentType.GROUP_CHAT, group_chat_info.selector_prompt)
 
-            selector_prompt = get_prompt(group_chat_info.selector_prompt, prompt_path=self._prompt_root)
-            model_client :OpenAIChatCompletionClient = ModelClient[group_chat_info.model_client.value]()
             if group_chat_info.type == GroupChatType.SELECTOR_GROUP_CHAT:
                 group_chat = self._create_selector_group_chat(
                     participants=participants,
@@ -51,7 +67,6 @@ class GroupChatBuilder:
                     model_client=model_client
                 )()
                 yield group_chat
-                await model_client.close()
                 await stack.aclose()
             else:
                 raise ValueError(f"Invalid group chat type: {group_chat_info.type}")

@@ -19,7 +19,7 @@ from chainlit.types import (
 )
 from chainlit.logger import logger
 
-from chainlit_web.data_layer.models.base_model import BaseModel
+from data_layer.models.base_model import BaseModel
 
 from sqlalchemy import select, insert, update, delete, and_, or_, UUID, Column, Integer, String, Text, Boolean, DateTime, ForeignKey, ARRAY
 from sqlalchemy.ext.declarative import declarative_base
@@ -37,7 +37,7 @@ class ThreadTable(Base):
     user_id = Column(Integer, ForeignKey('"User".id', ondelete='CASCADE'), nullable=False)
     user_identifier = Column(Text)  # Legacy compatibility field
     tags = Column(ARRAY(Text))
-    metadata = Column(JSONB, default={})
+    thread_metadata = Column(JSONB, default={})
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.current_timestamp())
     deleted_at = Column(DateTime)
@@ -70,7 +70,7 @@ class ThreadModel(BaseModel):
             user_id=thread.user_id,
             user_identifier=thread.user_identifier,
             tags=thread.tags,
-            metadata=thread.metadata if thread.metadata else {},
+            metadata=thread.thread_metadata if thread.thread_metadata else {},
             is_active=thread.is_active,
             created_at=thread.created_at,
             deleted_at=thread.deleted_at,
@@ -163,7 +163,7 @@ class ThreadModel(BaseModel):
                     name=thread.name,
                     userId=str(thread.user_uuid) if thread.user_uuid else None,
                     userIdentifier=thread.user_identifier,
-                    metadata=thread.metadata if thread.metadata else {},
+                    metadata=thread.thread_metadata if thread.thread_metadata else {},
                     steps=[],
                     elements=[],
                     tags=[],
@@ -334,7 +334,7 @@ class ThreadModel(BaseModel):
                     name=thread.name,
                     userId=str(thread.user_uuid) if thread.user_uuid else None,
                     userIdentifier=thread.user_identifier,
-                    metadata=thread.metadata if thread.metadata else {},
+                    metadata=thread.thread_metadata if thread.thread_metadata else {},
                     steps=[],
                     elements=[],
                     tags=[],

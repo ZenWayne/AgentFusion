@@ -1,4 +1,3 @@
-import asyncio
 import asyncpg
 from typing import Optional, Dict, Any, List, Union
 from datetime import datetime

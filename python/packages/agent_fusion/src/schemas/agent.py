@@ -40,6 +40,6 @@ class AssistantAgentConfig(BaseAgentConfig):
         
         return values
 
-ComponentInfo = Annotated[AssistantAgentConfig|UserProxyAgentConfig, Field(discriminator="type")]
+# ComponentInfo moved to schemas.component for unified component interface
 
 

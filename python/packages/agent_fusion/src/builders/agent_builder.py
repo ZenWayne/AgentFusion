@@ -1,6 +1,7 @@
 from base.utils import get_prompt  
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
-from schemas.agent import AssistantAgentConfig, UserProxyAgentConfig, AgentType, InputFuncType, ComponentInfo
+from schemas.component import ComponentInfo
+from schemas.agent import AssistantAgentConfig, UserProxyAgentConfig, AgentType, InputFuncType
 from model_client import ModelClient
 from autogen_ext.tools.mcp import mcp_server_tools, McpServerParams
 from autogen_ext.tools.mcp import StdioMcpToolAdapter, SseMcpToolAdapter
@@ -14,9 +15,7 @@ class AgentBuilder:
         self._input_func: Callable[[str], Awaitable[str]] | None = input_func
 
     @asynccontextmanager
-    async def build(self, name: str) -> AsyncGenerator[AssistantAgent | UserProxyAgent, None]:
-        agent_info: AssistantAgentConfig| UserProxyAgentConfig = AgentInfo[name]
-
+    async def build(self, agent_info: AssistantAgentConfig| UserProxyAgentConfig) -> AsyncGenerator[AssistantAgent | UserProxyAgent, None]:
         user_memory = ListMemory()
         if agent_info.type == AgentType.ASSISTANT_AGENT:
             model_client = ModelClient[agent_info.model_client.value]()
