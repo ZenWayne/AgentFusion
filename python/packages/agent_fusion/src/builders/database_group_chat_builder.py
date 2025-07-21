@@ -4,7 +4,8 @@
 支持从数据库加载模型配置的群聊构建器
 """
 
-from schemas.group_chat import ComponentInfo, GroupChatType, SelectorGroupChatConfig
+from schemas.group_chat import GroupChatType, SelectorGroupChatConfig
+from schemas.component import ComponentInfo
 from autogen_agentchat.teams import BaseGroupChat,SelectorGroupChat
 from model_client import ModelClient
 from model_client.database_model_client import DatabaseModelClientBuilder

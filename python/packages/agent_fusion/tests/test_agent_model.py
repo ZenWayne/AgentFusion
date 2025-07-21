@@ -8,6 +8,7 @@ import pytest
 import pytest_asyncio
 import tempfile
 import os
+import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from unittest.mock import AsyncMock, MagicMock
@@ -22,7 +23,7 @@ from data_layer.models.agent_model import AgentModel, AgentTable
 from data_layer.models.llm_model import ModelClientTable
 from data_layer.models.prompt_model import PromptTable, PromptVersionTable, PromptModel
 from data_layer.models.mcp_model import McpModel, McpServerTable
-from data_layer.models.base_model import Base
+from data_layer.models.base_model import Base, AgentMcpServerTable
 from schemas.component import ComponentInfo
 from schemas.agent import AgentType, AssistantAgentConfig, UserProxyAgentConfig
 
@@ -50,13 +51,16 @@ class SQLiteDBDataLayer(DBDataLayer):
             )
             self._session_factory = async_sessionmaker(self._engine, expire_on_commit=False)
             
-            # Replace JSONB and ARRAY columns for SQLite compatibility
+            # Replace JSONB, ARRAY and UUID columns for SQLite compatibility
             for table in Base.metadata.tables.values():
                 for column in table.columns:
-                    if isinstance(column.type, JSONB):
+                    column_type_str = str(column.type)
+                    if hasattr(column.type, '__visit_name__') and column.type.__visit_name__.startswith('JSON'):
                         column.type = JSON()
-                    elif isinstance(column.type, ARRAY):
+                    elif (hasattr(column.type, '__visit_name__') and column.type.__visit_name__.startswith('ARRAY')) or 'ARRAY' in column_type_str:
                         column.type = Text()  # Store arrays as text in SQLite
+                    elif 'UUID' in column_type_str:
+                        column.type = Text()  # Store UUID as text in SQLite
             
             # Create all tables
             async with self._engine.begin() as conn:
@@ -120,11 +124,12 @@ async def sample_model_client(sqlite_db):
     async with await sqlite_db.get_session() as session:
         model_client = ModelClientTable(
             id=1,
-            label="test-model",
-            model_name="gpt-4",
-            api_key_type="OPENAI_API_KEY",
-            base_url="https://api.openai.com/v1",
-            family="openai"
+            label="deepseek-chat_DeepSeek",
+            model_name="deepseek-chat",
+            base_url="https://api.deepseek.com/v1",
+            provider="deepseek",
+            model_info={"family": "deepseek"},
+            client_uuid=str(uuid.uuid4())
         )
         session.add(model_client)
         await session.commit()
@@ -141,11 +146,10 @@ async def sample_agent(sqlite_db, sample_model_client):
             name="test-agent",
             description="A test assistant agent",
             model_client_id=sample_model_client.id,
-            config={
-                "type": "assistant_agent",
-                "labels": ["test", "assistant"],
-                "mcp_server_names": []
-            }
+            agent_uuid=str(uuid.uuid4()),
+            provider="test-provider",
+            agent_type="assistant_agent",
+            labels='["test", "assistant"]'
         )
         session.add(agent)
         await session.commit()
@@ -164,7 +168,8 @@ async def sample_prompt(sqlite_db, sample_agent):
             name="test-agent System Message", 
             category="agent",
             subcategory="system_message",
-            agent_id=sample_agent.id
+            agent_id=sample_agent.id,
+            prompt_uuid=str(uuid.uuid4())
         )
         session.add(prompt)
         await session.flush()
@@ -189,10 +194,9 @@ async def sample_mcp_server(sqlite_db):
             id=1,
             name="test-mcp-server",
             description="Test MCP server",
-            config={
-                "command": "test-command",
-                "args": []
-            }
+            server_uuid=str(uuid.uuid4()),
+            command="test-command",
+            args=[]
         )
         session.add(mcp_server)
         await session.commit()
@@ -234,7 +238,9 @@ class TestAgentModel:
                 description="Inactive agent",
                 model_client_id=sample_model_client.id,
                 is_active=False,
-                config={"type": "assistant_agent"}
+                agent_uuid=str(uuid.uuid4()),
+                provider="test-provider",
+                agent_type="assistant_agent"
             )
             session.add(inactive_agent)
             await session.commit()
@@ -256,7 +262,7 @@ class TestAgentModel:
         assert component_info.name == "test-agent"
         assert component_info.description == "A test assistant agent"
         assert component_info.type == AgentType.ASSISTANT_AGENT
-        assert component_info.model_client == "test-model"
+        assert component_info.model_client == "deepseek-chat_DeepSeek"
         assert component_info.labels == ["test", "assistant"]
 
     @pytest.mark.asyncio
@@ -267,11 +273,11 @@ class TestAgentModel:
             user_agent = AgentTable(
                 name="user-agent",
                 description="User proxy agent",
-                config={
-                    "type": "user_proxy_agent",
-                    "input_func": "input",
-                    "labels": ["user", "proxy"]
-                }
+                agent_uuid=str(uuid.uuid4()),
+                provider="test-provider",
+                agent_type="user_proxy_agent",
+                input_func="input",
+                labels='["user", "proxy"]'
             )
             session.add(user_agent)
             await session.commit()
@@ -293,7 +299,8 @@ class TestAgentModel:
             name="updated-agent",
             description="Updated description",
             labels=["updated", "test"],
-            model_client="test-model"
+            model_client="deepseek-chat_DeepSeek",
+            prompt=lambda: "Updated prompt content"
         )
         
         result: AssistantAgentConfig = await agent_model.update_component_by_id(sample_agent.id, updated_info)
@@ -311,7 +318,8 @@ class TestAgentModel:
             name="test",
             description="test",
             labels=[],
-            model_client="test-model"
+            model_client="deepseek-chat_DeepSeek",
+            prompt=lambda: "Test prompt"
         )
         
         with pytest.raises(ValueError, match="Agent with ID '999' not found"):
@@ -358,14 +366,25 @@ class TestAgentModel:
         
         assert result is True
         
-        # Verify the agent config was updated
+        # Verify the relationship was created in agent_mcp_servers table
         async with await agent_model.db.get_session() as session:
-            from sqlalchemy import select
-            stmt = select(AgentTable).where(AgentTable.id == sample_agent.id)
+            from sqlalchemy import select, join
+            # Check that relationship exists in agent_mcp_servers table
+            stmt = select(AgentMcpServerTable, McpServerTable.name).select_from(
+                AgentMcpServerTable.__table__.join(
+                    McpServerTable.__table__, 
+                    AgentMcpServerTable.mcp_server_id == McpServerTable.id
+                )
+            ).where(
+                AgentMcpServerTable.agent_id == sample_agent.id
+            )
             result = await session.execute(stmt)
-            updated_agent: AgentTable = result.scalar_one()
+            relationships = result.all()
             
-            assert "test-mcp-server" in updated_agent.config.get("mcp_server_names", [])
+            assert len(relationships) == 1
+            relationship, server_name = relationships[0]
+            assert server_name == "test-mcp-server"
+            assert relationship.is_active is True
 
     @pytest.mark.asyncio
     async def test_add_mcp_server_to_agent_nonexistent_agent(self, agent_model):
@@ -397,14 +416,26 @@ class TestAgentModel:
         
         assert result is True
         
-        # Verify the server was removed
+        # Verify the relationship was deactivated in agent_mcp_servers table
         async with await agent_model.db.get_session() as session:
             from sqlalchemy import select
-            stmt = select(AgentTable).where(AgentTable.id == sample_agent.id)
+            # Check that relationship is deactivated in agent_mcp_servers table
+            stmt = select(AgentMcpServerTable, McpServerTable.name).select_from(
+                AgentMcpServerTable.__table__.join(
+                    McpServerTable.__table__, 
+                    AgentMcpServerTable.mcp_server_id == McpServerTable.id
+                )
+            ).where(
+                AgentMcpServerTable.agent_id == sample_agent.id
+            )
             result = await session.execute(stmt)
-            updated_agent: AgentTable = result.scalar_one()
+            relationships = result.all()
             
-            assert "test-mcp-server" not in updated_agent.config.get("mcp_server_names", [])
+            # Should still exist but be inactive (soft delete)
+            assert len(relationships) == 1
+            relationship, server_name = relationships[0]
+            assert server_name == "test-mcp-server"
+            assert relationship.is_active is False
 
     @pytest.mark.asyncio
     async def test_remove_mcp_server_from_agent_nonexistent_agent(self, agent_model):
@@ -435,26 +466,29 @@ class TestAgentModel:
 
     @pytest.mark.asyncio
     async def test_to_component_info_with_mcp_tools(self, agent_model, sample_agent, sample_mcp_server, sample_prompt):
-        """Test to_component_info includes MCP tools when configured"""
-        # Add MCP server to agent
-        agent_model.mcp_model.get_mcp_server_by_name = AsyncMock(return_value={"name": "test-mcp-server"})
-        agent_model.mcp_model.get_mcp_server_params_by_name = AsyncMock(return_value={"command": "test-command"})
-        
-        await agent_model.add_mcp_server_to_agent("test-agent", "test-mcp-server", 1)
-        
-        # Refresh agent from database
+        """Test to_component_info includes MCP tools when configured via relationship table"""
+        # Create relationship record in agent_mcp_servers table
         async with await agent_model.db.get_session() as session:
-            from sqlalchemy import select
-            stmt = select(AgentTable).where(AgentTable.id == sample_agent.id)
-            result = await session.execute(stmt)
-            refreshed_agent: AgentTable = result.scalar_one()
+            relationship = AgentMcpServerTable(
+                agent_id=sample_agent.id,
+                mcp_server_id=sample_mcp_server.id,
+                is_active=True,
+                created_by=1
+            )
+            session.add(relationship)
+            await session.commit()
         
-        component_info: AssistantAgentConfig = await agent_model.to_component_info(refreshed_agent)
+        # Mock mcp_model method for getting server params
+        agent_model.mcp_model.get_mcp_server_params_by_name = AsyncMock(return_value={"type": "StdioServerParams", "command": "test-command"})
+        
+        component_info: AssistantAgentConfig = await agent_model.to_component_info(sample_agent)
         
         assert isinstance(component_info, AssistantAgentConfig)
         assert component_info.mcp_tools is not None
         assert len(component_info.mcp_tools) == 1
-        assert component_info.mcp_tools[0] == {"command": "test-command"}
+        mcp_tool = component_info.mcp_tools[0]
+        assert mcp_tool.type == "StdioServerParams"
+        assert mcp_tool.command == "test-command"
 
 
 if __name__ == "__main__":

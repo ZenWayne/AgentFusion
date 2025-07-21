@@ -6,7 +6,8 @@
 
 from base.utils import get_prompt  
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
-from schemas.agent import AssistantAgentConfig, UserProxyAgentConfig, AgentType, InputFuncType, ComponentInfo
+from schemas.agent import AssistantAgentConfig, UserProxyAgentConfig, AgentType, InputFuncType
+from schemas.component import ComponentInfo
 from model_client import ModelClient
 from model_client.database_model_client import DatabaseModelClientBuilder
 from autogen_ext.tools.mcp import mcp_server_tools, McpServerParams

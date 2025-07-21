@@ -7,22 +7,19 @@ This module provides functionality to manage prompts and prompt versions in the 
 from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from datetime import datetime
 
-from .base_model import ComponentModel, BaseComponentTable
+from .base_model import ComponentModel, BaseComponentTable, Base
 from schemas.component import ComponentInfo
 from schemas.types import ComponentType
 from .group_chat_model import GroupChatTable
 from builders.prompt_builder import PromptBuilder
 
 from sqlalchemy import select, insert, update, and_, Column, Integer, String, Text, Boolean, DateTime, ForeignKey, UUID
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 
 if TYPE_CHECKING:
     from data_layer.base_data_layer import DBDataLayer
-
-Base = declarative_base()
 
 class PromptTable(BaseComponentTable):
     """SQLAlchemy ORM model for prompts table"""
@@ -36,7 +33,7 @@ class PromptTable(BaseComponentTable):
     agent_id = Column(Integer, ForeignKey('agents.id'))
     group_chat_id = Column(Integer, ForeignKey('group_chats.id'))
     
-    # Relationships
+    # Relationships - use string reference to avoid forward reference issues
     versions = relationship("PromptVersionTable", back_populates="prompt")
 
 class PromptVersionTable(Base):
@@ -72,7 +69,7 @@ class PromptModel(ComponentModel, PromptBuilder):
             stmt = select(PromptTable).where(
                 and_(
                     PromptTable.name == component_name,
-                    PromptTable.category == component_type
+                    PromptTable.category == component_type.value
                 )
             )
             result = await session.execute(stmt)
@@ -248,23 +245,32 @@ class PromptModel(ComponentModel, PromptBuilder):
             # Import here to avoid circular import
             from .agent_model import AgentTable
             
-            stmt = select(PromptVersionTable.content).select_from(
-                AgentTable.__table__
-                .join(PromptTable.__table__, AgentTable.id == PromptTable.agent_id)
-                .join(PromptVersionTable.__table__, and_(
-                    PromptTable.id == PromptVersionTable.prompt_id,
-                    PromptVersionTable.is_current == True
-                ))
-            ).where(and_(
-                PromptTable.name == component_name,
-                PromptTable.category == component_type,
-                PromptTable.is_active == True
-            ))
-
             if component_type == ComponentType.AGENT:
-                stmt = stmt.join(AgentTable.__table__, PromptTable.agent_id == AgentTable.id)
+                stmt = select(PromptVersionTable.content).select_from(
+                    AgentTable.__table__
+                    .join(PromptTable.__table__, AgentTable.id == PromptTable.agent_id)
+                    .join(PromptVersionTable.__table__, and_(
+                        PromptTable.id == PromptVersionTable.prompt_id,
+                        PromptVersionTable.is_current == True
+                    ))
+                ).where(and_(
+                    PromptTable.name == component_name,
+                    PromptTable.category == component_type,
+                    PromptTable.is_active == True
+                ))
             elif component_type == ComponentType.GROUP_CHAT:
-                stmt = stmt.join(GroupChatTable.__table__, PromptTable.group_chat_id == GroupChatTable.id)
+                stmt = select(PromptVersionTable.content).select_from(
+                    GroupChatTable.__table__
+                    .join(PromptTable.__table__, GroupChatTable.id == PromptTable.group_chat_id)
+                    .join(PromptVersionTable.__table__, and_(
+                        PromptTable.id == PromptVersionTable.prompt_id,
+                        PromptVersionTable.is_current == True
+                    ))
+                ).where(and_(
+                    PromptTable.name == component_name,
+                    PromptTable.category == component_type,
+                    PromptTable.is_active == True
+                ))
             
             result = await session.execute(stmt)
             return result.scalar_one_or_none()

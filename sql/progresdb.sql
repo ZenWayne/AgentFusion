@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS password_reset_tokens CASCADE;
 DROP TABLE IF EXISTS prompt_change_history CASCADE;
 DROP TABLE IF EXISTS prompt_versions CASCADE;
 DROP TABLE IF EXISTS prompts CASCADE;
+DROP TABLE IF EXISTS agent_mcp_servers CASCADE;
 DROP TABLE IF EXISTS mcp_servers CASCADE;
 DROP TABLE IF EXISTS agents CASCADE;
 DROP TABLE IF EXISTS model_clients CASCADE;
@@ -247,10 +248,11 @@ CREATE TABLE agents (
     component_type_id INTEGER REFERENCES component_types(id),
     version INTEGER DEFAULT 1,
     component_version INTEGER DEFAULT 1,
-    --CR add mcp related fields ref to mcp_servers, it will reference to multiple mcp_servers row
     description TEXT,
     model_client_id INTEGER REFERENCES model_clients(id),
-    config JSONB DEFAULT '{}', -- Store agent configuration
+    agent_type VARCHAR(50) DEFAULT 'assistant_agent',
+    labels TEXT[] DEFAULT '{}',
+    input_func VARCHAR(50) DEFAULT 'input',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by INTEGER REFERENCES "User"(id),
@@ -269,7 +271,6 @@ CREATE TABLE group_chats (
     selector_prompt TEXT, -- For selector group chat
     participants JSONB DEFAULT '[]', -- Array of participant names
     model_client VARCHAR(255), -- Reference to model client label
-    config JSONB DEFAULT '{}', -- Store full configuration
     component_type_id INTEGER REFERENCES component_types(id),
     version INTEGER DEFAULT 1,
     component_version INTEGER DEFAULT 1,
@@ -298,6 +299,17 @@ CREATE TABLE mcp_servers (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by INTEGER REFERENCES "User"(id),
     updated_by INTEGER REFERENCES "User"(id)
+);
+
+-- Agent-MCP Server relationship table (many-to-many)
+CREATE TABLE agent_mcp_servers (
+    id SERIAL PRIMARY KEY,
+    agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    mcp_server_id INTEGER NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by INTEGER REFERENCES "User"(id),
+    UNIQUE(agent_id, mcp_server_id)
 );
 
 -- Prompts table (main prompt definitions)
@@ -451,6 +463,11 @@ CREATE INDEX idx_agents_model_client ON agents(model_client_id);
 CREATE INDEX idx_mcp_servers_server_uuid ON mcp_servers(server_uuid);
 CREATE INDEX idx_mcp_servers_name ON mcp_servers(name);
 CREATE INDEX idx_mcp_servers_active ON mcp_servers(is_active);
+
+-- Agent-MCP Server relationship indexes
+CREATE INDEX idx_agent_mcp_servers_agent_id ON agent_mcp_servers(agent_id);
+CREATE INDEX idx_agent_mcp_servers_mcp_server_id ON agent_mcp_servers(mcp_server_id);
+CREATE INDEX idx_agent_mcp_servers_active ON agent_mcp_servers(is_active);
 
 -- Prompts indexes
 CREATE INDEX idx_prompts_prompt_uuid ON prompts(prompt_uuid);
@@ -659,10 +676,10 @@ INSERT INTO model_clients (label, provider, component_type_id, description, mode
      '{"vision": false, "function_calling": true, "json_output": true, "family": "r1"}'::jsonb, 1);
 
 -- Insert sample agents
-INSERT INTO agents (name, label, provider, component_type_id, description, model_client_id, created_by) VALUES 
-    ('prompt_refiner', 'prompt_refiner', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 1),
-    ('executor', 'executor', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 1),
-    ('user', 'UserProxyAgent', 'autogen_agentchat.agents.UserProxyAgent', 1, 'A human user', 1, 1);
+INSERT INTO agents (name, label, provider, component_type_id, description, model_client_id, agent_type, labels, input_func, created_by) VALUES 
+    ('prompt_refiner', 'prompt_refiner', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 'assistant_agent', ARRAY['prompt', 'refiner'], 'input', 1),
+    ('executor', 'executor', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 'assistant_agent', ARRAY['executor', 'action'], 'input', 1),
+    ('user', 'UserProxyAgent', 'autogen_agentchat.agents.UserProxyAgent', 1, 'A human user', 1, 'user_proxy_agent', ARRAY['user', 'proxy'], 'input', 1);
 
 -- Insert sample MCP servers based on config.json
 INSERT INTO mcp_servers (name, command, args, env, url, timeout, sse_read_timeout, description, created_by) VALUES 
@@ -675,6 +692,14 @@ INSERT INTO mcp_servers (name, command, args, env, url, timeout, sse_read_timeou
     ('file_system', 'node', 
      '["${userHome}\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\@modelcontextprotocol\\\\server-filesystem\\\\dist\\\\index.js", "${cwd}"]'::jsonb, 
      '{}'::jsonb, NULL, 10, 10, 'Default file system MCP server', 1);
+
+-- Insert sample agent-MCP server relationships
+INSERT INTO agent_mcp_servers (agent_id, mcp_server_id, created_by) VALUES 
+    (1, 1, 1), -- prompt_refiner uses file_system_windows
+    (1, 3, 1), -- prompt_refiner uses file_system
+    (2, 1, 1), -- executor uses file_system_windows
+    (2, 2, 1), -- executor uses file_system_unix
+    (2, 3, 1); -- executor uses file_system
 
 -- Insert sample prompts
 INSERT INTO prompts (prompt_id, name, category, subcategory, description, agent_id, created_by) VALUES 
@@ -1516,6 +1541,7 @@ COMMENT ON TABLE prompt_versions IS 'Version history for prompts with content an
 COMMENT ON TABLE prompt_change_history IS 'Detailed change tracking for prompt modifications';
 COMMENT ON TABLE model_clients IS 'Model client configurations for agents';
 COMMENT ON TABLE component_types IS 'Lookup table for component types';
+COMMENT ON TABLE agent_mcp_servers IS 'Many-to-many relationship between agents and MCP servers';
 
 COMMENT ON COLUMN "User".avatar_url IS 'URL to user avatar image';
 COMMENT ON COLUMN "User".timezone IS 'User timezone for proper datetime display';

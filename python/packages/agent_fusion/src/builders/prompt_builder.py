@@ -1,20 +1,21 @@
 import os
 from os.path import join
+from schemas.component import ComponentType
 
 
 class PromptBuilder:
     """Prompt builder following ModelBuilder pattern"""
     
-    def __init__(self, prompt_path: str = "prompt"):
+    def __init__(self, prompt_path: str = "config/prompt"):
         self.prompt_path = prompt_path
     
-    def get_prompt_by_catagory_and_name(self, agent_path: str, spliter: str = '/') -> str:
+    def get_prompt_by_catagory_and_name(self, component_type: ComponentType, component_name: str) -> str:
         """
         Get prompt content by category and name.
         
         Args:
-            agent_path: Path to the agent (category/name format)
-            spliter: Path separator, defaults to '/'
+            component_type: Component type
+            component_name: Component name
             
         Returns:
             str: Prompt content
@@ -22,7 +23,7 @@ class PromptBuilder:
         Raises:
             FileNotFoundError: If prompt file not found
         """
-        paths = agent_path.split(spliter)
+        paths = [component_type.value, component_name]
 
         dir = self.prompt_path
 

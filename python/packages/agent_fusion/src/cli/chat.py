@@ -2,58 +2,43 @@
 import argparse
 import asyncio
 from autogen_core import CancellationToken
-from chainlit_web.users import User
+from data_layer.models.agent_model import AgentModel
+from data_layer.data_layer import DBDataLayer
+from builders.group_chat_builder import GroupChatBuilder
+import os
+from builders.utils import load_info, GroupChatInfo
+from autogen_agentchat.ui import Console
 
 #CR inherit User and then  override the input_func to get the message from the command line
-class CommandLineUser(User):
-    def input_func(self):
-        async def wrap_input(prompt: str, token: CancellationToken) -> str:
-            print("Please enter a message, or type 'END' to end the chat:")
-            while True:
-                message = input(prompt)
-                if message != "END":
-                    return message
-                else:
-                    print("Please enter a message, or type 'END' to end the chat:")
-        return wrap_input
+#    extractor = SqlCommentExtractor()
+#    comments = extractor.extract_comments_from_sql(sql_string)
+
+async def group_chat(group_chat_name: str, message: str):
+    load_info()
+    database_url = os.getenv("DATABASE_URL")
+    db_layer = DBDataLayer(database_url)
+    agent_model = AgentModel(db_layer)
+    if group_chat_name in GroupChatInfo:
+        group_chat_info = GroupChatInfo[group_chat_name]
+    else:
+        raise ValueError(f"{group_chat_name} not found in GroupChatInfo")
+    group_chat_builder = GroupChatBuilder()
+    async with group_chat_builder.build(group_chat_info) as group_chat:
+        await Console(group_chat.run_stream(task=message))
+
 
 async def main():
-    current_user = CommandLineUser()
     #CR achive the same effect as python -m cli.chat run component_name you can reference 
     #src/chainlit_web/users.py, src/chainlit_web/run.py and the reference code in src/chainlit_web/
     #you should create user first, and then use the user to start a chat
     parser = argparse.ArgumentParser(description="Start a chat with an agent.")
+    parser.add_argument("component", help="The name of the component to run.")
     parser.add_argument("message", help="The message to send to the agent.")
-    parser.add_argument("component_name", help="The name of the component to run.")
+
     args = parser.parse_args()
 
-    # Create a configuration for the language model
-    config_list = [
-        {
-            "model": "gpt-4",
-            "api_key": "YOUR_API_KEY"  # Replace with your actual API key
-        }
-    ]
-
-    # Create the assistant agent
-    assistant = AssistantAgent(
-        name="assistant",
-        llm_config={
-            "config_list": config_list
-        }
-    )
-
-    # Create the user proxy agent
-    user_proxy = UserProxyAgent(
-        name="user_proxy",
-        code_execution_config={"work_dir": "coding"}
-    )
-
-    # Start the chat
-    await user_proxy.a_initiate_chat(
-        assistant,
-        message=args.message
-    )
+    await group_chat(group_chat_name=args.component, message=args.message)
 
 if __name__ == "__main__":
     asyncio.run(main())
+    #

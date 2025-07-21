@@ -8,6 +8,7 @@ from .llm_model import LLMModel
 from .agent_model import AgentModel
 from .group_chat_model import GroupChatModel
 from .mcp_model import McpModel
+from .prompt_model import PromptModel
 
 __all__ = [
     'BaseModel',
@@ -22,5 +23,6 @@ __all__ = [
     'LLMModel',
     'AgentModel',
     'GroupChatModel',
-    'McpModel'
+    'McpModel',
+    'PromptModel'
 ]

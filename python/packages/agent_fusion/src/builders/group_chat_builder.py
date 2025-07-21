@@ -18,10 +18,12 @@ from schemas.types import ComponentType
 class GroupChatBuilder:
     def __init__(
         self,
-        #CR use callable[[str], Awaitable[str]]
-        input_func: Callable[[str], Awaitable[str]] | None = input
+        input_func: Callable[[str], Awaitable[str]] | None = None
     ):
         self._input_func: Callable[[str], Awaitable[str]] | None = input_func
+
+    def agent_builder(self) -> AgentBuilder:
+        return AgentBuilder()
 
     def model_client_builder(self) -> ModelClientBuilder:
         return ModelClientBuilder()
@@ -46,16 +48,19 @@ class GroupChatBuilder:
     @asynccontextmanager
     async def build(self, group_chat_info: SelectorGroupChatConfig) -> AsyncGenerator[BaseGroupChat, None]:
         
-        agent_builder = AgentBuilder(self._input_func)
+        agent_builder = self.agent_builder()
         async with AsyncExitStack() as stack:
             # 使用泛型类型创建 model_client_builder 实例
             model_client_builder: ModelClientBuilder = self.model_client_builder()
             model_client_config = model_client_builder.get_component_by_name(group_chat_info.model_client)
             model_client = await stack.enter_async_context(model_client_builder.build(model_client_config))
             
+            # Use get_component_by_name to get agent configs by name
+            agent_configs = [agent_builder.get_component_by_name(participant_name) 
+                           for participant_name in group_chat_info.participants]
             participants = await asyncio.gather(
-                *[stack.enter_async_context(agent_builder.build(participant)) 
-                for participant in group_chat_info.participants]
+                *[stack.enter_async_context(agent_builder.build(agent_config)) 
+                for agent_config in agent_configs]
             )
             prompt_builder: PromptBuilder = self.prompt_builder()
             selector_prompt = prompt_builder.get_prompt_by_catagory_and_name(ComponentType.GROUP_CHAT, group_chat_info.selector_prompt)

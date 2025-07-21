@@ -83,7 +83,6 @@ class GroupChatModel(ComponentModel):
                               selector_prompt: Optional[str] = None,
                               participants: Optional[List[str]] = None,
                               model_client: Optional[str] = None,
-                              config: Optional[Dict[str, Any]] = None,
                               created_by: Optional[int] = None) -> Optional[int]:
         """创建新的GroupChat"""
         async with await self.db.get_session() as session:
@@ -96,7 +95,6 @@ class GroupChatModel(ComponentModel):
                     selector_prompt=selector_prompt,
                     participants=participants or [],
                     model_client=model_client,
-                    config=config or {},
                     created_by=created_by
                 )
                 

@@ -12,12 +12,24 @@ if TYPE_CHECKING:
     from data_layer.base_data_layer import DBDataLayer
 
 from schemas.component import ComponentInfo
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, UUID, select, and_
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, UUID, select, and_, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
 
 Base = declarative_base()
+
+# Relationship tables
+class AgentMcpServerTable(Base):
+    """SQLAlchemy ORM model for agent_mcp_servers relationship table"""
+    __tablename__ = 'agent_mcp_servers'
+    
+    id = Column(Integer, primary_key=True)
+    agent_id = Column(Integer, ForeignKey('agents.id'), nullable=False)
+    mcp_server_id = Column(Integer, ForeignKey('mcp_servers.id'), nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.current_timestamp())
+    created_by = Column(Integer, nullable=True)
 
 
 class BaseComponentTable(Base):
@@ -26,7 +38,6 @@ class BaseComponentTable(Base):
     
     id = Column(Integer, primary_key=True)
     description = Column(Text)
-    config = Column(JSONB, default={})
     created_at = Column(DateTime, server_default=func.current_timestamp())
     updated_at = Column(DateTime, server_default=func.current_timestamp())
     created_by = Column(Integer)

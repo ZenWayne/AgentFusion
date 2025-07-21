@@ -99,15 +99,36 @@ class AgentFusionDataLayer(BaseDataLayer):
         """执行查询"""
         return await self.db_layer.execute_query(query, params)
 
-    # ===== BaseDataLayer 抽象方法现在由继承的模型类实现 =====
-    # 以下方法已移除，因为它们由继承的模型类直接提供：
-    # - get_user (UserModel)
-    # - create_user (UserModel)
-    # - delete_feedback (FeedbackModel)
-    # - upsert_feedback (FeedbackModel)
-    # - get_element (ElementModel)
-    # - get_thread_author (ThreadModel)
-    # - list_threads (ThreadModel)
+    # ===== BaseDataLayer 抽象方法实现 =====
+    async def get_user(self, identifier: str) -> Optional["PersistedUser"]:
+        """获取用户"""
+        return await self.user.get_user(identifier)
+    
+    async def create_user(self, user: "User") -> Optional["PersistedUser"]:
+        """创建用户"""
+        return await self.user.create_user(user)
+    
+    async def delete_feedback(self, feedback_id: str) -> bool:
+        """删除反馈"""
+        return await self.feedback.delete_feedback(feedback_id)
+    
+    async def upsert_feedback(self, feedback: Feedback) -> str:
+        """更新或插入反馈"""
+        return await self.feedback.upsert_feedback(feedback)
+    
+    async def get_element(self, thread_id: str, element_id: str) -> Optional[ElementDict]:
+        """获取元素"""
+        return await self.element.get_element(thread_id, element_id)
+    
+    async def get_thread_author(self, thread_id: str) -> str:
+        """获取线程作者"""
+        return await self.thread.get_thread_author(thread_id)
+    
+    async def list_threads(
+        self, pagination: Pagination, filters: ThreadFilter
+    ) -> PaginatedResponse[ThreadDict]:
+        """列出线程"""
+        return await self.thread.list_threads(pagination, filters)
 
     # ===== 线程相关方法的重写（需要处理存储客户端）=====
     async def delete_thread(self, thread_id: str):

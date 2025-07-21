@@ -6,18 +6,22 @@ This module provides functionality to manage agents in the database.
 
 from typing import Dict, List, Any, Optional, TYPE_CHECKING
 
-from .base_model import ComponentModel, BaseComponentTable
+from .base_model import ComponentModel, BaseComponentTable, AgentMcpServerTable
 from schemas.component import ComponentInfo
+from schemas.types import ComponentType
 from schemas.agent import AgentType, AssistantAgentConfig, UserProxyAgentConfig
 from .llm_model import ModelClientTable
 from .prompt_model import PromptTable, PromptVersionTable, PromptModel
-from .mcp_model import McpModel
+from .mcp_model import McpModel, McpServerTable
+from builders.agent_builder import AgentBuilder
 
-from sqlalchemy import select, insert, update, and_, Column, Integer, String, Text, Boolean, DateTime, ForeignKey, UUID
+from sqlalchemy import select, insert, update, and_, Column, Integer, String, Text, Boolean, DateTime, ForeignKey, UUID, ARRAY
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
+
+from data_layer.models.llm_model import LLMModel
 
 if TYPE_CHECKING:
     from data_layer.base_data_layer import DBDataLayer
@@ -31,9 +35,16 @@ class AgentTable(BaseComponentTable):
     agent_uuid = Column(UUID, unique=True, server_default=func.gen_random_uuid())
     name = Column(String(255), nullable=False, unique=True)
     label = Column(String(255))
-    model_client_id = Column(Integer, ForeignKey('model_clients.id'))
+    provider = Column(String(500), nullable=False)
+    component_type_id = Column(Integer, nullable=True)
+    version = Column(Integer, default=1)
+    component_version = Column(Integer, default=1)
+    model_client_id = Column(Integer, ForeignKey('model_clients.id'), nullable=True)
+    agent_type = Column(String(50), default='assistant_agent')
+    labels = Column(ARRAY(Text), default="[]")
+    input_func = Column(String(50), default='input')
 
-class AgentModel(ComponentModel):
+class AgentModel(ComponentModel, AgentBuilder):
     """Agent model class"""
     table_class = AgentTable
     uuid_column_name = "agent_uuid"
@@ -44,6 +55,8 @@ class AgentModel(ComponentModel):
         self.prompt_model = PromptModel(db_layer)
         self.mcp_model = McpModel(db_layer)
     
+    def model_client_builder(self) -> LLMModel:
+        return LLMModel(self.db)
     
     async def get_all_components(self, filter_active: bool = True) -> Dict[str, ComponentInfo]:
         """
@@ -100,24 +113,49 @@ class AgentModel(ComponentModel):
             model_client_label = row[0] if row else None
             
             # Get current prompt content from PromptModel
-            current_prompt = await self.prompt_model.get_current_prompt_content(table_row.name)
+            current_prompt = await self.prompt_model.get_current_prompt_content(ComponentType.AGENT, table_row.name)
             
-            agent_config = table_row.config if table_row.config else {}
+            # Get MCP servers from relationship table instead of config
+            mcp_servers_stmt = select(
+                McpServerTable.name
+            ).select_from(
+                AgentMcpServerTable.__table__.join(
+                    McpServerTable.__table__, 
+                    AgentMcpServerTable.mcp_server_id == McpServerTable.id
+                )
+            ).where(
+                and_(
+                    AgentMcpServerTable.agent_id == table_row.id,
+                    AgentMcpServerTable.is_active == True,
+                    McpServerTable.is_active == True
+                )
+            )
             
-            # Base configuration
+            mcp_result = await session.execute(mcp_servers_stmt)
+            mcp_server_names = [row[0] for row in mcp_result.all()]
+            
+            # Base configuration using dedicated columns
+            # Handle labels - deserialize from JSON string if needed (SQLite compatibility)
+            labels = table_row.labels or []
+            if isinstance(labels, str):
+                import json
+                try:
+                    labels = json.loads(labels)
+                except (json.JSONDecodeError, ValueError):
+                    labels = []
+            
             base_config = {
                 "name": table_row.name,
                 "description": table_row.description or "",
-                "labels": agent_config.get("labels", [])
+                "labels": labels
             }
             
-            # Determine agent type
-            agent_type = agent_config.get("type", "assistant_agent")
+            # Use dedicated agent_type column
+            agent_type = table_row.agent_type or "assistant_agent"
             
             if agent_type == AgentType.ASSISTANT_AGENT:
-                # Load MCP tools if specified in agent config
+                # Load MCP tools from relationship table
                 mcp_tools = None
-                mcp_server_names = agent_config.get("mcp_server_names", [])
                 if mcp_server_names:
                     mcp_tools = []
                     for server_name in mcp_server_names:
@@ -135,50 +173,56 @@ class AgentModel(ComponentModel):
             else:
                 return UserProxyAgentConfig(
                     type=AgentType.USER_PROXY_AGENT,
-                    input_func=agent_config.get("input_func", "input"),
+                    input_func=table_row.input_func or "input",
                     **base_config
                 ) 
 
     async def update_component_by_id(self, component_id: int, component_info: ComponentInfo) -> ComponentInfo:
         """根据组件主键ID更新组件信息"""
-        #CR你应该用UPDATE或者INSERT来更新组件信息，而不是用SELECT来从数据库同步组件信息
         async with await self.db.get_session() as session:
             try:
-                # Find the agent
-                stmt = select(AgentTable).where(and_(
+                # Check if agent exists first
+                check_stmt = select(AgentTable.id).where(and_(
                     AgentTable.id == component_id,
                     AgentTable.is_active == True
                 ))
-                
-                result = await session.execute(stmt)
-                agent = result.scalar_one_or_none()
-                
-                if not agent:
+                result = await session.execute(check_stmt)
+                if not result.scalar_one_or_none():
                     raise ValueError(f"Agent with ID '{component_id}' not found")
                 
-                # Build config from ComponentInfo
-                config = {
-                    "type": component_info.type,
-                    "labels": component_info.labels
+                # Prepare update values using dedicated columns
+                # Handle labels - serialize to JSON string if needed (SQLite compatibility)
+                labels = component_info.labels
+                if isinstance(labels, list):
+                    import json
+                    labels = json.dumps(labels)
+                
+                update_values = {
+                    "name": component_info.name,
+                    "description": component_info.description,
+                    "agent_type": component_info.type,
+                    "labels": labels,
+                    "updated_at": func.current_timestamp()
                 }
                 
+                # Add input_func if it exists (for UserProxyAgent)
                 if hasattr(component_info, 'input_func'):
-                    config["input_func"] = component_info.input_func
+                    update_values["input_func"] = component_info.input_func
                 
-                # Preserve existing MCP server names if they exist
-                existing_config = agent.config or {}
-                if "mcp_server_names" in existing_config:
-                    config["mcp_server_names"] = existing_config["mcp_server_names"]
+                # Use UPDATE statement instead of modifying ORM object
+                update_stmt = update(AgentTable).where(
+                    AgentTable.id == component_id
+                ).values(**update_values)
                 
-                # Update agent fields
-                agent.name = component_info.name
-                agent.description = component_info.description
-                agent.config = config
-                agent.updated_at = func.current_timestamp()
-                
+                await session.execute(update_stmt)
                 await session.commit()
                 
-                return await self.to_component_info(agent)
+                # Get updated agent for return
+                select_stmt = select(AgentTable).where(AgentTable.id == component_id)
+                result = await session.execute(select_stmt)
+                updated_agent = result.scalar_one()
+                
+                return await self.to_component_info(updated_agent)
                 
             except Exception as e:
                 await session.rollback()
@@ -214,7 +258,7 @@ class AgentModel(ComponentModel):
     
     async def add_mcp_server_to_agent(self, agent_name: str, server_name: str, updated_by: int = 1) -> bool:
         """
-        Add an MCP server to an agent's configuration
+        Add an MCP server to an agent via relationship table
         
         Args:
             agent_name: Agent name
@@ -226,36 +270,52 @@ class AgentModel(ComponentModel):
         """
         async with await self.db.get_session() as session:
             try:
-                # Get the agent
-                stmt = select(AgentTable).where(and_(
+                # Get the agent ID
+                agent_stmt = select(AgentTable.id).where(and_(
                     AgentTable.name == agent_name,
                     AgentTable.is_active == True
                 ))
-                result = await session.execute(stmt)
-                agent = result.scalar_one_or_none()
+                agent_result = await session.execute(agent_stmt)
+                agent_id = agent_result.scalar_one_or_none()
                 
-                if not agent:
+                if not agent_id:
                     return False
                 
-                # Verify MCP server exists
-                server_data = await self.mcp_model.get_mcp_server_by_name(server_name)
-                if not server_data:
+                # Get the MCP server ID
+                server_stmt = select(McpServerTable.id).where(and_(
+                    McpServerTable.name == server_name,
+                    McpServerTable.is_active == True
+                ))
+                server_result = await session.execute(server_stmt)
+                server_id = server_result.scalar_one_or_none()
+                
+                if not server_id:
                     return False
                 
-                # Update agent config
-                config = agent.config or {}
-                mcp_server_names = config.get("mcp_server_names", [])
+                # Check if relationship already exists
+                existing_stmt = select(AgentMcpServerTable.id).where(and_(
+                    AgentMcpServerTable.agent_id == agent_id,
+                    AgentMcpServerTable.mcp_server_id == server_id
+                ))
+                existing_result = await session.execute(existing_stmt)
+                existing_id = existing_result.scalar_one_or_none()
                 
-                if server_name not in mcp_server_names:
-                    mcp_server_names.append(server_name)
-                    config["mcp_server_names"] = mcp_server_names
-                    
-                    agent.config = config
-                    agent.updated_at = func.current_timestamp()
-                    agent.updated_by = updated_by
-                    
-                    await session.commit()
+                if existing_id:
+                    # Reactivate if exists but inactive
+                    update_stmt = update(AgentMcpServerTable).where(
+                        AgentMcpServerTable.id == existing_id
+                    ).values(is_active=True)
+                    await session.execute(update_stmt)
+                else:
+                    # Insert new relationship
+                    insert_stmt = insert(AgentMcpServerTable).values(
+                        agent_id=agent_id,
+                        mcp_server_id=server_id,
+                        created_by=updated_by
+                    )
+                    await session.execute(insert_stmt)
                 
+                await session.commit()
                 return True
                 
             except Exception as e:
@@ -265,7 +325,7 @@ class AgentModel(ComponentModel):
     
     async def remove_mcp_server_from_agent(self, agent_name: str, server_name: str, updated_by: int = 1) -> bool:
         """
-        Remove an MCP server from an agent's configuration
+        Remove an MCP server from an agent via relationship table
         
         Args:
             agent_name: Agent name
@@ -277,32 +337,38 @@ class AgentModel(ComponentModel):
         """
         async with await self.db.get_session() as session:
             try:
-                # Get the agent
-                stmt = select(AgentTable).where(and_(
+                # Get the agent ID
+                agent_stmt = select(AgentTable.id).where(and_(
                     AgentTable.name == agent_name,
                     AgentTable.is_active == True
                 ))
-                result = await session.execute(stmt)
-                agent = result.scalar_one_or_none()
+                agent_result = await session.execute(agent_stmt)
+                agent_id = agent_result.scalar_one_or_none()
                 
-                if not agent:
+                if not agent_id:
                     return False
                 
-                # Update agent config
-                config = agent.config or {}
-                mcp_server_names = config.get("mcp_server_names", [])
+                # Get the MCP server ID
+                server_stmt = select(McpServerTable.id).where(and_(
+                    McpServerTable.name == server_name,
+                    McpServerTable.is_active == True
+                ))
+                server_result = await session.execute(server_stmt)
+                server_id = server_result.scalar_one_or_none()
                 
-                if server_name in mcp_server_names:
-                    mcp_server_names.remove(server_name)
-                    config["mcp_server_names"] = mcp_server_names
-                    
-                    agent.config = config
-                    agent.updated_at = func.current_timestamp()
-                    agent.updated_by = updated_by
-                    
-                    await session.commit()
+                if not server_id:
+                    return False
                 
-                return True
+                # Deactivate the relationship (soft delete)
+                update_stmt = update(AgentMcpServerTable).where(and_(
+                    AgentMcpServerTable.agent_id == agent_id,
+                    AgentMcpServerTable.mcp_server_id == server_id
+                )).values(is_active=False)
+                
+                result = await session.execute(update_stmt)
+                await session.commit()
+                
+                return result.rowcount > 0
                 
             except Exception as e:
                 await session.rollback()
@@ -311,7 +377,7 @@ class AgentModel(ComponentModel):
     
     async def get_agent_mcp_servers(self, agent_name: str) -> List[str]:
         """
-        Get list of MCP server names associated with an agent
+        Get list of MCP server names associated with an agent from relationship table
         
         Args:
             agent_name: Agent name
@@ -321,19 +387,28 @@ class AgentModel(ComponentModel):
         """
         async with await self.db.get_session() as session:
             try:
-                # Get the agent
-                stmt = select(AgentTable).where(and_(
-                    AgentTable.name == agent_name,
-                    AgentTable.is_active == True
-                ))
+                # Get MCP server names via relationship table
+                stmt = select(
+                    McpServerTable.name
+                ).select_from(
+                    AgentTable.__table__.join(
+                        AgentMcpServerTable.__table__, 
+                        AgentTable.id == AgentMcpServerTable.agent_id
+                    ).join(
+                        McpServerTable.__table__, 
+                        AgentMcpServerTable.mcp_server_id == McpServerTable.id
+                    )
+                ).where(
+                    and_(
+                        AgentTable.name == agent_name,
+                        AgentTable.is_active == True,
+                        AgentMcpServerTable.is_active == True,
+                        McpServerTable.is_active == True
+                    )
+                )
+                
                 result = await session.execute(stmt)
-                agent = result.scalar_one_or_none()
-                
-                if not agent:
-                    return []
-                
-                config = agent.config or {}
-                return config.get("mcp_server_names", [])
+                return [row[0] for row in result.all()]
                 
             except Exception as e:
                 print(f"Error getting agent MCP servers: {e}")

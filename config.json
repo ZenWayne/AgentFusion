@@ -150,7 +150,7 @@
             "description": "hil",
             "labels":["group_chat", "hil"],
             "type": "selector_group_chat",
-            "selector_prompt": "group_chat/hil/hil_selector_pt.md",
+            "selector_prompt": "hil/hil_selector_pt.md",
             "model_client": "deepseek-chat_DeepSeek",
             "participants": ["product_manager", "user", "file_system"]
         }

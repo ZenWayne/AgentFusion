@@ -31,6 +31,7 @@ from builders.model_builder import ModelClientBuilder
 from data_layer.data_layer import AgentFusionDataLayer
 from data_layer.models.llm_model import LLMModel
 from data_layer.models.prompt_model import PromptModel
+from data_layer.models.agent_model import AgentModel
 
 ## ref from python\packages\autogen-core\src\autogen_core\_message_context.py
 
@@ -212,8 +213,8 @@ class UISelectorGroupChatBuilder(GroupChatBuilderBase):
     def prompt_builder(self) -> PromptModel:
         return PromptModel(self._data_layer) #type: ignore
 
-    def model_client_builder(self) -> ModelClientBuilder:
-        return LLMModel(self._data_layer)
+    def model_client_builder(self) -> AgentModel:
+        return AgentModel(self._data_layer)
 
     def _create_selector_group_chat(
         self, 
