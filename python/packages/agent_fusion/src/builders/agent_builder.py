@@ -1,15 +1,17 @@
 from base.utils import get_prompt  
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
+from agents.codeagent import CodeExecutionAgent
 from schemas.component import ComponentInfo
 from schemas.agent import AssistantAgentConfig, UserProxyAgentConfig, AgentType, InputFuncType
 from builders.model_builder import ModelClientBuilder
 from model_client import ModelClient
 from autogen_ext.tools.mcp import mcp_server_tools, McpServerParams
 from autogen_ext.tools.mcp import StdioMcpToolAdapter, SseMcpToolAdapter
-from .utils import AgentInfo, load_info
+from .utils import AgentInfo
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Callable, Awaitable
 from autogen_core.memory import ListMemory
+from autogen_agentchat.base import Handoff
 
 class AgentBuilder:
     def __init__(self, input_func: Callable[[str], Awaitable[str]] | None = input):
@@ -45,13 +47,22 @@ class AgentBuilder:
                     system_message=prompt,
                     tools=agent_tools,
                     description=agent_info.description,
-                    memory=[user_memory]
+                    memory=[user_memory],
+                    #TODO: read handoff from agent_info and add example in config.json(based on file_system agent)
+                    handoffs=[Handoff(target="user", message="Transfer to user.")],
                 )
                 agent.component_label = agent_info.name
                 yield agent
 
         elif agent_info.type == AgentType.USER_PROXY_AGENT:
             agent = UserProxyAgent(
+                name=agent_info.name,
+                input_func=self._input_func
+            )
+            agent.component_label = agent_info.name
+            yield agent
+        elif agent_info.type == AgentType.CODE_AGENT:
+            agent = CodeExecutionAgent(
                 name=agent_info.name,
                 input_func=self._input_func
             )

@@ -3,14 +3,14 @@ from autogen_ext.tools.mcp import McpServerParams, StdioServerParams, SseServerP
 from schemas.component import ComponentInfo
 from schemas.agent import AgentType, AssistantAgentConfig, UserProxyAgentConfig
 from schemas.graph_flow import GraphFlowConfig
-from schemas.group_chat import SelectorGroupChatConfig
+from schemas.group_chat import GroupChatConfig, GroupChatType as GroupChatTypeEnum, SelectorGroupChatConfig, RoundRobinGroupChatConfig
 from base.utils import get_prompt, parse_cwd_placeholders
 
 prompt_root: str = ""
 McpInfo: dict[str, McpServerParams] = {}
 AgentInfo: dict[str, ComponentInfo] = {}
 GraphFlowInfo: dict[str, GraphFlowConfig] = {}
-GroupChatInfo: dict[str, SelectorGroupChatConfig] = {}
+GroupChatInfo: dict[str, GroupChatConfig] = {}
 
 def extract_mcp_tools(mcp_tools: list[str]) -> list[McpServerParams]:
     tools = []
@@ -51,4 +51,10 @@ def load_info(config_path: str="config.json"):
         GraphFlowInfo[name] = GraphFlowConfig(**graph_flow_config)
     
     for name, group_chat_config in metadata["group_chats"].items():
-        GroupChatInfo[name] = SelectorGroupChatConfig(**group_chat_config)
+        group_chat_type = group_chat_config.get("type", None)
+        if group_chat_type == GroupChatTypeEnum.SELECTOR_GROUP_CHAT.value:
+            GroupChatInfo[name] = SelectorGroupChatConfig(**group_chat_config)
+        elif group_chat_type == GroupChatTypeEnum.ROUND_ROBIN_GROUP_CHAT.value:
+            GroupChatInfo[name] = RoundRobinGroupChatConfig(**group_chat_config)
+        else:
+            raise ValueError(f"Invalid group chat type: {group_chat_type}")

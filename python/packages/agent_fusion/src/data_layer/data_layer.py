@@ -116,6 +116,10 @@ class AgentFusionDataLayer(BaseDataLayer):
         """更新或插入反馈"""
         return await self.feedback.upsert_feedback(feedback)
     
+    async def authenticate_user(self, username: str, password: str, ip_address: str = None) -> Optional[Dict[str, Any]]:
+        """认证用户"""
+        return await self.user.authenticate_user(username, password, ip_address)
+    
     async def get_element(self, thread_id: str, element_id: str) -> Optional[ElementDict]:
         """获取元素"""
         return await self.element.get_element(thread_id, element_id)

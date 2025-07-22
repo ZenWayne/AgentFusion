@@ -1571,7 +1571,6 @@ COMMENT ON COLUMN feedbacks.feedback_type IS 'Type of feedback: rating, thumbs, 
 COMMENT ON COLUMN prompt_versions.content_hash IS 'SHA256 hash of content for integrity verification';
 COMMENT ON COLUMN prompt_versions.is_current IS 'Indicates if this is the current active version';
 COMMENT ON COLUMN prompt_change_history.diff_info IS 'Detailed diff information in JSON format';
-COMMENT ON COLUMN agents.config IS 'JSON configuration for the agent';
 COMMENT ON COLUMN model_clients.model_info IS 'JSON model capabilities and metadata';
 
 

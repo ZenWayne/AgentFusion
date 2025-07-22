@@ -6,7 +6,9 @@ This module provides functionality to manage agents in the database.
 
 from typing import Dict, List, Any, Optional, TYPE_CHECKING
 
-from .base_model import ComponentModel, BaseComponentTable, AgentMcpServerTable
+#use mcp_tables.py and agent_table.py
+from .base_model import ComponentModel
+from .tables import AgentTable, ModelClientTable, PromptTable, PromptVersionTable, McpServerTable, AgentMcpServerTable
 from schemas.component import ComponentInfo
 from schemas.types import ComponentType
 from schemas.agent import AgentType, AssistantAgentConfig, UserProxyAgentConfig
@@ -26,23 +28,7 @@ from data_layer.models.llm_model import LLMModel
 if TYPE_CHECKING:
     from data_layer.base_data_layer import DBDataLayer
 
-Base = declarative_base()
 
-class AgentTable(BaseComponentTable):
-    """SQLAlchemy ORM model for agents table"""
-    __tablename__ = 'agents'
-    
-    agent_uuid = Column(UUID, unique=True, server_default=func.gen_random_uuid())
-    name = Column(String(255), nullable=False, unique=True)
-    label = Column(String(255))
-    provider = Column(String(500), nullable=False)
-    component_type_id = Column(Integer, nullable=True)
-    version = Column(Integer, default=1)
-    component_version = Column(Integer, default=1)
-    model_client_id = Column(Integer, ForeignKey('model_clients.id'), nullable=True)
-    agent_type = Column(String(50), default='assistant_agent')
-    labels = Column(ARRAY(Text), default="[]")
-    input_func = Column(String(50), default='input')
 
 class AgentModel(ComponentModel, AgentBuilder):
     """Agent model class"""

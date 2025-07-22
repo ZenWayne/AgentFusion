@@ -1,8 +1,8 @@
 from asyncio import Queue
 from typing import Any, Awaitable, Callable, List, Tuple, cast, Optional, Type
 from autogen_core.model_context import ChatCompletionContext
-from autogen_agentchat.teams._group_chat._selector_group_chat import SelectorGroupChatManager
-from autogen_agentchat.teams import SelectorGroupChat
+from autogen_agentchat.teams._group_chat._round_robin_group_chat import RoundRobinGroupChatManager
+from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_agentchat.teams._group_chat._events import ( 
     GroupChatAgentResponse, 
     GroupChatMessage,
@@ -17,7 +17,6 @@ from autogen_agentchat.base import ChatAgent, TerminationCondition
 from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.messages import BaseAgentEvent, BaseTextChatMessage, BaseChatMessage
 from autogen_agentchat.teams._group_chat._chat_agent_container import ChatAgentContainer
-from autogen_agentchat.teams._group_chat._selector_group_chat import SelectorFuncType, CandidateFuncType
 from autogen_agentchat.messages import (
     MessageFactory, 
     TextMessage, 
@@ -32,9 +31,6 @@ from data_layer.data_layer import AgentFusionDataLayer
 from data_layer.models.llm_model import LLMModel
 from data_layer.models.prompt_model import PromptModel
 from data_layer.models.agent_model import AgentModel
-from schemas.component import GroupChatType
-from schemas.group_chat import GroupChatType as GroupChatTypeEnum
-from chainlit_web.ui_hook.ui_round_robin_group_chat import UIRoundRobinGroupChat
 
 ## ref from python\packages\autogen-core\src\autogen_core\_message_context.py
 
@@ -51,7 +47,7 @@ class MessageChunk:
 message_chunks: dict[str, Message] = {}  # type: ignore [reportUnknownVariableType]
 
 
-class UISelectorGroupChatManager(SelectorGroupChatManager):
+class UIRoundRobinGroupChatManager(RoundRobinGroupChatManager):
 
     def __init__(
         self,
@@ -65,12 +61,6 @@ class UISelectorGroupChatManager(SelectorGroupChatManager):
         termination_condition: TerminationCondition | None,
         max_turns: int | None,
         message_factory: MessageFactory,
-        model_client: ChatCompletionClient,
-        selector_prompt: str,
-        allow_repeated_speaker: bool,
-        selector_func: Optional[SelectorFuncType],
-        max_selector_attempts: int,
-        candidate_func: Optional[CandidateFuncType],
         emit_team_events: bool,
         model_context: ChatCompletionContext | None,
         model_client_streaming: bool = False,
@@ -86,12 +76,6 @@ class UISelectorGroupChatManager(SelectorGroupChatManager):
             termination_condition,
             max_turns,
             message_factory,
-            model_client,
-            selector_prompt,
-            allow_repeated_speaker,
-            selector_func,
-            max_selector_attempts,
-            candidate_func,
             emit_team_events,
             model_context,
             model_client_streaming,
@@ -107,7 +91,7 @@ class UISelectorGroupChatManager(SelectorGroupChatManager):
         await super().handle_group_chat_message(message, ctx)
         inner_message : BaseAgentEvent | BaseTextChatMessage = message.message
         runtime : SingleThreadedAgentRuntime = self._runtime
-        sender_agent: UISelectorGroupChatAgentChatContainer = await runtime._get_agent(ctx.sender)
+        sender_agent: UIRoundRobinGroupChatAgentChatContainer = await runtime._get_agent(ctx.sender)
         agent_name = sender_agent._agent.name
         if agent_name == "user":
             return
@@ -137,8 +121,8 @@ class UISelectorGroupChatManager(SelectorGroupChatManager):
         #await self._response.send()
 
 
-class UISelectorGroupChatAgentChatContainer(ChatAgentContainer):
-    """A container for a graph flow agent chat."""
+class UIRoundRobinGroupChatAgentChatContainer(ChatAgentContainer):
+    """A container for a round robin group chat agent."""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -154,7 +138,7 @@ class UISelectorGroupChatAgentChatContainer(ChatAgentContainer):
         to the delegate agent and publish the response."""
         await super().handle_agent_response(message, ctx)
 
-class UISelectorGroupChat(SelectorGroupChat):
+class UIRoundRobinGroupChat(RoundRobinGroupChat):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -170,8 +154,8 @@ class UISelectorGroupChat(SelectorGroupChat):
             termination_condition: TerminationCondition | None,
             max_turns: int | None,
             message_factory: MessageFactory,
-        ) -> Callable[[], SelectorGroupChatManager]:
-        return lambda: UISelectorGroupChatManager(
+        ) -> Callable[[], RoundRobinGroupChatManager]:
+        return lambda: UIRoundRobinGroupChatManager(
             name,
             group_topic_type,
             output_topic_type,
@@ -182,12 +166,6 @@ class UISelectorGroupChat(SelectorGroupChat):
             termination_condition,
             max_turns,
             message_factory,
-            self._model_client,
-            self._selector_prompt,
-            self._allow_repeated_speaker,
-            self._selector_func,
-            self._max_selector_attempts,
-            self._candidate_func,
             self._emit_team_events,
             self._model_context,
             self._model_client_streaming,
@@ -201,9 +179,9 @@ class UISelectorGroupChat(SelectorGroupChat):
             message_factory: MessageFactory
         ) -> Callable[[], ChatAgent]:
         return lambda: \
-            UISelectorGroupChatAgentChatContainer(parent_topic_type, output_topic_type, agent, message_factory)
+            UIRoundRobinGroupChatAgentChatContainer(parent_topic_type, output_topic_type, agent, message_factory)
 
-class UIGroupChatBuilder(GroupChatBuilderBase):
+class UIRoundRobinGroupChatBuilder(GroupChatBuilderBase):
     def __init__(self, 
                  data_layer: AgentFusionDataLayer,
                  input_func: Callable[[str], Awaitable[str]] | None = input, 
@@ -219,14 +197,12 @@ class UIGroupChatBuilder(GroupChatBuilderBase):
     def model_client_builder(self) -> AgentModel:
         return AgentModel(self._data_layer)
 
-    def _group_chat_map(self, GroupChatTypeEnum: GroupChatTypeEnum) -> Type[GroupChatType]:
-        return {
-            GroupChatTypeEnum.SELECTOR_GROUP_CHAT: UISelectorGroupChat,
-            GroupChatTypeEnum.ROUND_ROBIN_GROUP_CHAT: UIRoundRobinGroupChat
-        }[GroupChatTypeEnum]
-
-
-
-
-
-
+    def _create_group_chat_factory(
+        self, 
+        participants: list[ChatAgent],
+        model_client_streaming: bool = False,
+    ) -> Callable[[], RoundRobinGroupChat]:
+        return lambda: UIRoundRobinGroupChat(
+            participants=participants,
+            model_client_streaming=self._model_client_streaming
+        )

@@ -44,7 +44,7 @@ class ModelClientBuilder:
         )
         model_client.component_label = component_info.label
         yield model_client
-        model_client.close()
+        await model_client.close()
     
     def get_available_labels(self) -> list[str]:
         """Get all available model client labels"""

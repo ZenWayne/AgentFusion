@@ -16,36 +16,11 @@ from chainlit.logger import logger
 from dataclasses import dataclass
 
 from data_layer.models.base_model import BaseModel
+from data_layer.models.tables.user_table import UserTable
+from data_layer.models.tables.user_activity_logs_table import UserActivityLogsTable
 
-from sqlalchemy import select, insert, update, delete, and_, Column, Integer, String, Text, Boolean, DateTime, UUID as SQLAlchemyUUID
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import select, insert, update, delete, and_, text
 from sqlalchemy.sql import func
-from sqlalchemy.dialects.postgresql import JSONB
-
-Base = declarative_base()
-
-
-class UserTable(Base):
-    """SQLAlchemy ORM model for User table"""
-    __tablename__ = 'User'
-    
-    id = Column(Integer, primary_key=True)
-    user_uuid = Column(SQLAlchemyUUID, unique=True, server_default=func.gen_random_uuid())
-    username = Column(String(255), unique=True, nullable=False)
-    identifier = Column(String(255), unique=True, nullable=False)
-    email = Column(String(255), nullable=False)
-    password_hash = Column(String(255))
-    role = Column(String(50), default='user')
-    first_name = Column(String(255))
-    last_name = Column(String(255))
-    is_active = Column(Boolean, default=True)
-    is_verified = Column(Boolean, default=False)
-    failed_login_attempts = Column(Integer, default=0)
-    locked_until = Column(DateTime)
-    last_login = Column(DateTime)
-    created_at = Column(DateTime, server_default=func.current_timestamp())
-    updated_at = Column(DateTime, server_default=func.current_timestamp())
-    user_metadata = Column(JSONB, default={})
 
 
 @dataclass
@@ -310,60 +285,23 @@ class UserModel(BaseModel):
         if user:
             user.failed_login_attempts += 1
             if user.failed_login_attempts >= 5:
-                from sqlalchemy import text
-                user.locked_until = func.current_timestamp() + text("INTERVAL '30 minutes'")
+                # Use datetime calculation for better database compatibility
+                from datetime import datetime, timedelta
+                user.locked_until = datetime.utcnow() + timedelta(minutes=30)
             user.updated_at = func.current_timestamp()
-    
-    async def _record_failed_login(self, conn, username: str):
-        """Record failed login attempt and handle account locking"""
-        lock_query = """
-            UPDATE "User" 
-            SET failed_login_attempts = failed_login_attempts + 1,
-                locked_until = CASE 
-                    WHEN failed_login_attempts >= 4 THEN CURRENT_TIMESTAMP + INTERVAL '30 minutes'
-                    ELSE locked_until
-                END
-            WHERE username = $1 AND is_active = TRUE
-        """
-        await conn.execute(lock_query, username)
     
     async def _log_activity_orm(self, session, user_id: Optional[int], activity_type: str, 
                               details: Dict[str, Any], status: str = "success"):
         """记录用户活动 - ORM 版本"""
-        # 使用原生 SQL，因为 user_activity_logs 表可能不在同一个 ORM 模型中
-        from sqlalchemy import text
-        log_query = text("""
-            INSERT INTO user_activity_logs (
-                user_id, activity_type, action_details, ip_address, status
-            ) VALUES (:user_id, :activity_type, :action_details, :ip_address, :status)
-        """)
-        await session.execute(
-            log_query,
-            {
-                'user_id': user_id,
-                'activity_type': activity_type,
-                'action_details': json.dumps(details),
-                'ip_address': details.get('ip_address'),
-                'status': status
-            }
+        # 使用 ORM 模型插入记录
+        activity_log = UserActivityLogsTable(
+            user_id=user_id,
+            activity_type=activity_type,
+            action_details=json.dumps(details),
+            ip_address=details.get('ip_address'),
+            status=status
         )
-    
-    async def _log_activity(self, conn, user_id: Optional[int], activity_type: str, 
-                          details: Dict[str, Any], status: str = "success"):
-        """Log user activity"""
-        log_query = """
-            INSERT INTO user_activity_logs (
-                user_id, activity_type, action_details, ip_address, status
-            ) VALUES ($1, $2, $3, $4, $5)
-        """
-        await conn.execute(
-            log_query, 
-            user_id, 
-            activity_type, 
-            json.dumps(details),  # Serialize dictionary to JSON string
-            details.get('ip_address'),
-            status
-        )
+        session.add(activity_log)
     
     async def update_user(self, user: PersistedUser) -> Optional[AgentFusionUser]:
         """Update user's last_login timestamp"""

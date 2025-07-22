@@ -136,6 +136,14 @@
         }
     },
     "group_chats": {
+        "file_system": {
+            "name": "file_system",
+            "description": "文件系统操作代理，负责处理文件和目录相关的操作",
+            "labels":["file_system", "agent"],
+            "type": "round_robin_group_chat",
+            "participants": ["file_system"],
+            "handoff_target": "user"
+        },
         "prompt_flow": {
             "name": "prompt_flow",
             "description": "Prompt迭代器",

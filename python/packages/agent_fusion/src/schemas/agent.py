@@ -12,6 +12,7 @@ class InputFuncType(str, Enum):
 class AgentType(str, Enum):
     ASSISTANT_AGENT = "assistant_agent"
     USER_PROXY_AGENT = "user_proxy_agent"
+    CODE_AGENT = "code_agent"
 
 class BaseAgentConfig(BaseModel):
     name: str
@@ -23,9 +24,11 @@ class UserProxyAgentConfig(BaseAgentConfig):
     input_func: str
 
 class AssistantAgentConfig(BaseAgentConfig):
-    type: Literal[AgentType.ASSISTANT_AGENT]
+    type: Literal[AgentType.ASSISTANT_AGENT, AgentType.CODE_AGENT]
     prompt_path: str | None = None
     prompt: Callable[[], str] | None = None
+    #CR ajust database and agent_model 
+    user_handoff: str | None = None
     model_client: model_client_label
     mcp_tools: list[McpServerParams] | None = None
 

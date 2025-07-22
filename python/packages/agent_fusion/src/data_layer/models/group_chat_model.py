@@ -68,13 +68,6 @@ class GroupChatModel(ComponentModel):
                 model_client=group_chat.model_client
             )
     
-    
-    
-    
-    
-    
-    
-    
     async def create_group_chat(self, 
                               name: str,
                               type: str,

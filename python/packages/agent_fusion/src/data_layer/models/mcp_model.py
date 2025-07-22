@@ -16,24 +16,13 @@ from base.mcp import parse_mcp_server
 from sqlalchemy import select, insert, update, and_, UUID, Column, Integer, String, Text, Boolean, DateTime
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
+from .tables import McpServerTable
 
 if TYPE_CHECKING:
     from data_layer.base_data_layer import DBDataLayer
 
 
-class McpServerTable(BaseComponentTable):
-    """SQLAlchemy ORM model for mcp_servers table"""
-    __tablename__ = 'mcp_servers'
-    
-    server_uuid = Column(UUID, unique=True, server_default=func.gen_random_uuid())
-    name = Column(String(255), nullable=False, unique=True)
-    command = Column(String(500))
-    args = Column(JSONB, default=[])
-    env = Column(JSONB, default={})
-    url = Column(String(500))
-    headers = Column(JSONB, default={})
-    timeout = Column(Integer, default=30)
-    sse_read_timeout = Column(Integer, default=30)
+
 
 
 class McpModel(ComponentModel):

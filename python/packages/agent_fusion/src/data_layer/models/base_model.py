@@ -16,34 +16,7 @@ from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, UUID, s
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
-
-Base = declarative_base()
-
-# Relationship tables
-class AgentMcpServerTable(Base):
-    """SQLAlchemy ORM model for agent_mcp_servers relationship table"""
-    __tablename__ = 'agent_mcp_servers'
-    
-    id = Column(Integer, primary_key=True)
-    agent_id = Column(Integer, ForeignKey('agents.id'), nullable=False)
-    mcp_server_id = Column(Integer, ForeignKey('mcp_servers.id'), nullable=False)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, server_default=func.current_timestamp())
-    created_by = Column(Integer, nullable=True)
-
-
-class BaseComponentTable(Base):
-    """组件表的基类，包含所有组件共有的字段"""
-    __abstract__ = True
-    
-    id = Column(Integer, primary_key=True)
-    description = Column(Text)
-    created_at = Column(DateTime, server_default=func.current_timestamp())
-    updated_at = Column(DateTime, server_default=func.current_timestamp())
-    created_by = Column(Integer)
-    updated_by = Column(Integer)
-    is_active = Column(Boolean, default=True)
-
+from .tables import BaseComponentTable
 
 class BaseModel:
     """所有数据模型的基类"""

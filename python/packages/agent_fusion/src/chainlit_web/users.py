@@ -16,7 +16,7 @@ from schemas.types import ComponentType
 from schemas.agent import AgentType
 from schemas.group_chat import GroupChatType
 from autogen_agentchat.teams import BaseGroupChat
-from chainlit_web.ui_hook.ui_select_group_chat import UISelectorGroupChatBuilder
+from chainlit_web.ui_hook.ui_select_group_chat import UIGroupChatBuilder
 from autogen_core import CancellationToken
 from chainlit.user_session import UserSession
 from chainlit.context import context
@@ -242,11 +242,8 @@ class User(UserSessionData, UserSession):
         factory_map = {
             AgentType.ASSISTANT_AGENT: AgentBuilder(input_func=wrap_input).build,
             AgentType.USER_PROXY_AGENT: AgentBuilder(input_func=wrap_input).build,
-            GroupChatType.SELECTOR_GROUP_CHAT: 
-            UISelectorGroupChatBuilder(
-                data_layer=data_layer,
-                input_func=wrap_input, 
-            ).build,
+            GroupChatType.SELECTOR_GROUP_CHAT:UIGroupChatBuilder(data_layer=data_layer,input_func=wrap_input).build,
+            GroupChatType.ROUND_ROBIN_GROUP_CHAT:UIGroupChatBuilder(data_layer=data_layer,input_func=wrap_input).build,
         }
         async_context = factory_map[component_info.type](component_info)
         return async_context
