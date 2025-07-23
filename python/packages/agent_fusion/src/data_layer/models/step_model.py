@@ -13,38 +13,15 @@ from chainlit.types import FeedbackDict
 from chainlit.logger import logger
 
 from data_layer.models.base_model import BaseModel
+from .tables.step_table import StepsTable
 
-from sqlalchemy import select, insert, update, delete, and_, Column, String, Text, Boolean, DateTime, text
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import select, insert, update, delete, and_, text
 from sqlalchemy.sql import func
-from sqlalchemy.dialects.postgresql import JSONB
-
-Base = declarative_base()
 
 if TYPE_CHECKING:
     from chainlit.step import StepDict
 
 ISO_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
-
-
-class StepsTable(Base):
-    """SQLAlchemy ORM model for steps table"""
-    __tablename__ = 'steps'
-    
-    id = Column(String, primary_key=True)
-    thread_id = Column(String)
-    parent_id = Column(String)
-    input = Column(Text)
-    step_metadata = Column(JSONB, default={})
-    name = Column(String)
-    output = Column(Text)
-    type = Column(String, nullable=False)
-    start_time = Column(DateTime, server_default=func.current_timestamp())
-    end_time = Column(DateTime)
-    show_input = Column(String, default='json')
-    is_error = Column(Boolean, default=False)
-    created_at = Column(DateTime, server_default=func.current_timestamp())
-    updated_at = Column(DateTime, server_default=func.current_timestamp())
 
 
 @dataclass

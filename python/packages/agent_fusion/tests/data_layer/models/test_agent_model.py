@@ -19,11 +19,15 @@ from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 
 # Import the classes we need to test
 from data_layer.base_data_layer import DBDataLayer
-from data_layer.models.agent_model import AgentModel, AgentTable
-from data_layer.models.llm_model import ModelClientTable
-from data_layer.models.prompt_model import PromptTable, PromptVersionTable, PromptModel
-from data_layer.models.mcp_model import McpModel, McpServerTable
-from data_layer.models.base_model import Base, AgentMcpServerTable
+from data_layer.models.agent_model import AgentModel
+from data_layer.models.tables import (
+    Base, BaseComponentTable, AgentTable, ModelClientTable, PromptTable, 
+    PromptVersionTable, McpServerTable, AgentMcpServerTable, UserTable,
+    ElementTable, FeedbackTable, GroupChatTable, StepsTable, ThreadTable,
+    UserActivityLogsTable
+)
+from data_layer.models.prompt_model import PromptModel
+from data_layer.models.mcp_model import McpModel
 from schemas.component import ComponentInfo
 from schemas.agent import AgentType, AssistantAgentConfig, UserProxyAgentConfig
 

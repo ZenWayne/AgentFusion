@@ -60,16 +60,18 @@ def decode_jwt(token: str) -> AgentFusionUser:
 
 
 @cl.header_auth_callback
-async def header_auth_callback(headers: Dict[str, str]) -> Optional[cl.User]:
-    cookies = cookie_parser(headers.get('cookie'))
-    access_token = get_token_from_cookies(cookies)
-    if access_token:
-        try:
+async def header_auth_callback(headers: Dict[str, str]) -> Optional[cl.User]:    
+    try:
+        if not headers.get('cookie'):
+            return None
+        cookies = cookie_parser(headers.get('cookie'))
+        access_token = get_token_from_cookies(cookies)
+        if access_token:
             User: AgentFusionUser = decode_jwt(access_token)
             return User
-        except Exception as e:
-            print(f"Authentication error: {e}")
-            return None
+    except Exception as e:
+        print(f"Authentication error: {e}")
+        return None
     return None
 
 @cl.password_auth_callback

@@ -12,9 +12,8 @@ from .tables import AgentTable, ModelClientTable, PromptTable, PromptVersionTabl
 from schemas.component import ComponentInfo
 from schemas.types import ComponentType
 from schemas.agent import AgentType, AssistantAgentConfig, UserProxyAgentConfig
-from .llm_model import ModelClientTable
-from .prompt_model import PromptTable, PromptVersionTable, PromptModel
-from .mcp_model import McpModel, McpServerTable
+from .prompt_model import PromptModel
+from .mcp_model import McpModel
 from builders.agent_builder import AgentBuilder
 
 from sqlalchemy import select, insert, update, and_, Column, Integer, String, Text, Boolean, DateTime, ForeignKey, UUID, ARRAY

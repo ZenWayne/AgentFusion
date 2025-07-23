@@ -14,35 +14,13 @@ from chainlit.element import ElementDict
 from chainlit.logger import logger
 
 from data_layer.models.base_model import BaseModel
+from .tables.element_table import ElementTable
 
-from sqlalchemy import select, insert, update, delete, and_, or_, Column, Integer, String, Text, BigInteger, ForeignKey
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import select, insert, update, delete, and_, or_
 from sqlalchemy.sql import func
-from sqlalchemy.dialects.postgresql import JSONB
 
 if TYPE_CHECKING:
     from chainlit.element import Element
-
-Base = declarative_base()
-
-class ElementTable(Base):
-    """SQLAlchemy ORM model for elements table"""
-    __tablename__ = 'elements'
-    
-    id = Column(String, primary_key=True)
-    thread_id = Column(String, ForeignKey('threads.id'))
-    step_id = Column(String, ForeignKey('steps.id'))
-    element_metadata = Column(JSONB, default={})
-    mime_type = Column(String)
-    name = Column(String)
-    object_key = Column(String)
-    url = Column(String)
-    chainlit_key = Column(String)
-    display = Column(String)
-    size_bytes = Column(BigInteger)
-    language = Column(String)
-    page_number = Column(Integer)
-    props = Column(JSONB, default={})
 
 @dataclass
 class ElementInfo:

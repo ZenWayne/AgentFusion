@@ -8,7 +8,10 @@
       "Bash(python:*)",
       "Bash(rm:*)",
       "Bash(grep:*)",
-      "WebFetch(domain:microsoft.github.io)"
+      "WebFetch(domain:microsoft.github.io)",
+      "Bash(mkdir:*)",
+      "Bash(move test_group_chat_model.py data_layermodelstest_group_chat_model.py)",
+      "Bash(mv:*)"
     ],
     "deny": []
   }

@@ -55,7 +55,8 @@ CREATE TABLE "User" (
     locked_until TIMESTAMP,
     email_verified_at TIMESTAMP,
     phone VARCHAR(20),
-    metadata JSONB DEFAULT '{}', -- Store additional user preferences, settings, etc.
+    --CR 检查所有表的metadata字段和代码中的一一对应，并修改这里的字段符合代码中的
+    user_metadata JSONB DEFAULT '{}', -- Store additional user preferences, settings, etc.
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by INTEGER REFERENCES "User"(id),

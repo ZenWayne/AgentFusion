@@ -10,7 +10,7 @@ class ThreadTable(Base):
     
     id = Column(UUID, primary_key=True, server_default=func.gen_random_uuid())
     name = Column(Text)
-    user_id = Column(Integer, ForeignKey('"User".id', ondelete='CASCADE'), nullable=False)
+    user_id = Column(Integer, ForeignKey('User.id', ondelete='CASCADE'), nullable=False)
     user_identifier = Column(Text)  # Legacy compatibility field
     tags = Column(ARRAY(Text))
     thread_metadata = Column(JSONB, default={})

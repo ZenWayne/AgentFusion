@@ -16,7 +16,7 @@ from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, UUID, s
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
-from .tables import BaseComponentTable
+from .tables import BaseComponentTable, Base
 
 class BaseModel:
     """所有数据模型的基类"""

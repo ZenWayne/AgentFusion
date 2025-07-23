@@ -10,27 +10,13 @@ from datetime import datetime
 from dataclasses import dataclass
 
 from data_layer.models.base_model import BaseModel, ComponentModel, BaseComponentTable
+from data_layer.models.tables.llm_table import ModelClientTable
 from schemas.model_info import ModelClientConfig
 from builders.model_builder import ModelClientBuilder
 from schemas.types import ComponentType
 from sqlalchemy import select, insert, update, and_, UUID, Column, Integer, String, Text, Boolean, DateTime
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
-
-class ModelClientTable(BaseComponentTable):
-    """SQLAlchemy ORM model for model_clients table"""
-    __tablename__ = 'model_clients'
-    
-    client_uuid = Column(UUID, unique=True, server_default=func.gen_random_uuid())
-    label = Column(String(255), nullable=False, unique=True)
-    provider = Column(String(500), nullable=False)
-    component_type_id = Column(Integer)
-    version = Column(Integer, default=1)
-    component_version = Column(Integer, default=1)
-    model_name = Column(String(255))
-    base_url = Column(String(500))
-    api_key_hash = Column(String(255))
-    model_info = Column(JSONB, default={})
 
 class LLMModel(ComponentModel, ModelClientBuilder):
     """LLM模型数据模型"""

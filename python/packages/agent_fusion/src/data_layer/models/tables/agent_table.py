@@ -1,8 +1,6 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, Text, DateTime, func, UUID
-from sqlalchemy.orm import declarative_base
 from .base_table import BaseComponentTable
-
-Base = declarative_base()
+from sqlalchemy.dialects.postgresql import ARRAY
 
 
 class AgentTable(BaseComponentTable):

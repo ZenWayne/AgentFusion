@@ -113,7 +113,7 @@ class AgentFusionUser(PersistedUser):
     
     @property
     def email(self) -> Optional[str]:
-        return self.user_metadata.get("email")
+        return self.metadata.get("email")
     
     @property
     def role(self) -> str:
@@ -154,7 +154,7 @@ class UserModel(BaseModel):
             last_login=model.last_login,
             created_at=model.created_at,
             updated_at=model.updated_at,
-            metadata=model.metadata if model.metadata else {}
+            user_metadata=model.user_metadata if model.user_metadata else {}
         )
     
     async def get_user(self, identifier: str) -> Optional[PersistedUser]:
@@ -172,7 +172,7 @@ class UserModel(BaseModel):
                 uuid=str(user.user_uuid),
                 identifier=user.identifier,
                 createdAt=user.created_at.isoformat(),
-                metadata=user.metadata if user.metadata else {},
+                metadata=user.user_metadata if user.user_metadata else {},
             )
     
     async def hash_password(self, password: str) -> str:
@@ -205,6 +205,7 @@ class UserModel(BaseModel):
                         "username": username,
                         "ip_address": ip_address
                     })
+                    await session.commit()
                     return None
                 
                 # Check if account is locked
@@ -215,6 +216,7 @@ class UserModel(BaseModel):
                         "ip_address": ip_address,
                         "locked_until": user_record.locked_until.isoformat()
                     })
+                    await session.commit()
                     return None
                 
                 # Check if account is active
@@ -224,6 +226,7 @@ class UserModel(BaseModel):
                         "username": username,
                         "ip_address": ip_address
                     })
+                    await session.commit()
                     return None
                 
                 # Verify password
@@ -235,19 +238,21 @@ class UserModel(BaseModel):
                         "username": username,
                         "ip_address": ip_address
                     })
+                    await session.commit()
                     return None
                 
                 # Password is correct - reset failed attempts and update last login
-                user_record.last_login = func.current_timestamp()
+                now = datetime.utcnow()
+                user_record.last_login = now
                 user_record.failed_login_attempts = 0
                 user_record.locked_until = None
-                user_record.updated_at = func.current_timestamp()
+                user_record.updated_at = now
                 
                 # Log successful login
                 await self._log_activity_orm(session, user_record.id, "login_success", details={
                     "username": username,
                     "ip_address": ip_address,
-                    "last_login": user_record.last_login.isoformat() if user_record.last_login else None
+                    "last_login": now.isoformat()
                 })
                 
                 await session.commit()
@@ -265,30 +270,24 @@ class UserModel(BaseModel):
                 
             except Exception as e:
                 await session.rollback()
-                # Log authentication error
-                await self._log_activity_orm(session, None, "login_error", details={
-                    "error": str(e),
-                    "username": username,
-                    "ip_address": ip_address
-                })
                 logger.error(f"Error in authenticate_user: {e}")
                 raise e
     
     async def _record_failed_login_orm(self, session, username: str):
         """记录失败登录尝试并处理账户锁定 - ORM 版本"""
         stmt = select(UserTable).where(
-            (UserTable.username == username) & (UserTable.is_active == True)
+            and_(UserTable.username == username, UserTable.is_active == True)
         )
         result = await session.execute(stmt)
         user = result.scalar_one_or_none()
         
         if user:
+            from datetime import timedelta
             user.failed_login_attempts += 1
             if user.failed_login_attempts >= 5:
                 # Use datetime calculation for better database compatibility
-                from datetime import datetime, timedelta
                 user.locked_until = datetime.utcnow() + timedelta(minutes=30)
-            user.updated_at = func.current_timestamp()
+            user.updated_at = datetime.utcnow()
     
     async def _log_activity_orm(self, session, user_id: Optional[int], activity_type: str, 
                               details: Dict[str, Any], status: str = "success"):
@@ -297,7 +296,7 @@ class UserModel(BaseModel):
         activity_log = UserActivityLogsTable(
             user_id=user_id,
             activity_type=activity_type,
-            action_details=json.dumps(details),
+            action_details=details,
             ip_address=details.get('ip_address'),
             status=status
         )
@@ -312,8 +311,9 @@ class UserModel(BaseModel):
                 user_record = result.scalar_one_or_none()
                 
                 if user_record:
-                    user_record.last_login = func.current_timestamp()
-                    user_record.updated_at = func.current_timestamp()
+                    now = datetime.utcnow()
+                    user_record.last_login = now
+                    user_record.updated_at = now
                     await session.commit()
                     return user
                 
@@ -380,7 +380,7 @@ class UserModel(BaseModel):
                         last_name=metadata.get('last_name'),
                         created_at=now,
                         last_login=now,
-                        metadata=metadata,
+                        user_metadata=metadata,
                         is_active=True
                     )
                     session.add(new_user)
@@ -390,7 +390,7 @@ class UserModel(BaseModel):
                 await session.refresh(existing_user)
                 
                 # Convert to AgentFusionUser
-                result_metadata = existing_user.metadata if existing_user.metadata else {}
+                result_metadata = existing_user.user_metadata if existing_user.user_metadata else {}
                 
                 return AgentFusionUser(
                     id=existing_user.id,
@@ -434,9 +434,9 @@ class UserModel(BaseModel):
             stmt = select(
                 UserTable.id, UserTable.user_uuid, UserTable.username, UserTable.identifier,
                 UserTable.email, UserTable.role, UserTable.is_active, UserTable.is_verified,
-                UserTable.first_name, UserTable.last_name, UserTable.created_at, UserTable.metadata
+                UserTable.first_name, UserTable.last_name, UserTable.created_at, UserTable.user_metadata
             ).where(
-                (UserTable.user_uuid == user_uuid) & (UserTable.is_active == True)
+                and_(UserTable.user_uuid == user_uuid, UserTable.is_active == True)
             )
             result = await session.execute(stmt)
             row = result.first()
@@ -454,6 +454,6 @@ class UserModel(BaseModel):
                     'first_name': row.first_name,
                     'last_name': row.last_name,
                     'created_at': row.created_at,
-                    'metadata': row.metadata
+                    'metadata': row.user_metadata
                 }
             return None 

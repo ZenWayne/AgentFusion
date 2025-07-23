@@ -7,52 +7,18 @@ This module provides functionality to manage prompts and prompt versions in the 
 from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from datetime import datetime
 
-from .base_model import ComponentModel, BaseComponentTable, Base
+from .base_model import ComponentModel
 from schemas.component import ComponentInfo
 from schemas.types import ComponentType
 from .group_chat_model import GroupChatTable
 from builders.prompt_builder import PromptBuilder
+from .tables.prompt_table import PromptTable, PromptVersionTable
 
-from sqlalchemy import select, insert, update, and_, Column, Integer, String, Text, Boolean, DateTime, ForeignKey, UUID
+from sqlalchemy import select, insert, update, and_
 from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import JSONB
 
 if TYPE_CHECKING:
     from data_layer.base_data_layer import DBDataLayer
-
-class PromptTable(BaseComponentTable):
-    """SQLAlchemy ORM model for prompts table"""
-    __tablename__ = 'prompts'
-    
-    prompt_uuid = Column(UUID, unique=True, server_default=func.gen_random_uuid())
-    prompt_id = Column(String(255), nullable=False, unique=True)
-    name = Column(String(255), nullable=False)
-    category = Column(String(100))
-    subcategory = Column(String(100))
-    agent_id = Column(Integer, ForeignKey('agents.id'))
-    group_chat_id = Column(Integer, ForeignKey('group_chats.id'))
-    
-    # Relationships - use string reference to avoid forward reference issues
-    versions = relationship("PromptVersionTable", back_populates="prompt")
-
-class PromptVersionTable(Base):
-    """SQLAlchemy ORM model for prompt_versions table"""
-    __tablename__ = 'prompt_versions'
-    
-    id = Column(Integer, primary_key=True)
-    prompt_id = Column(Integer, ForeignKey('prompts.id'), nullable=False)
-    version_number = Column(Integer, nullable=False)
-    version_label = Column(String(255))
-    content = Column(Text, nullable=False)
-    status = Column(String(50), default='active')
-    is_current = Column(Boolean, default=False)
-    created_at = Column(DateTime, server_default=func.current_timestamp())
-    created_by = Column(Integer)
-    change_description = Column(Text)
-    
-    # Relationships
-    prompt = relationship("PromptTable", back_populates="versions")
 
 
 class PromptModel(ComponentModel, PromptBuilder):

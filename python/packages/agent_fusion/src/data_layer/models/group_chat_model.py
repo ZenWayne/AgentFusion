@@ -5,11 +5,13 @@ GroupChat模型类
 """
 
 import json
+import uuid
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from dataclasses import dataclass
 
 from data_layer.models.base_model import ComponentModel, BaseComponentTable
+from data_layer.models.tables.group_chat_table import GroupChatTable
 from schemas.component import ComponentInfo
 from schemas.group_chat import SelectorGroupChatConfig
 
@@ -17,27 +19,6 @@ from sqlalchemy import select, insert, update, and_, UUID, Column, Integer, Stri
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
-
-Base = declarative_base()
-
-class GroupChatTable(BaseComponentTable):
-    """SQLAlchemy ORM model for group_chats table"""
-    __tablename__ = 'group_chats'
-    
-    group_chat_uuid = Column(UUID, unique=True, server_default=func.gen_random_uuid())
-    name = Column(String(255), nullable=False, unique=True)
-    type = Column(String(100), nullable=False)
-    labels = Column(ARRAY(Text), default=[])
-    selector_prompt = Column(Text)
-    participants = Column(JSONB, default=[])
-    model_client = Column(String(255))
-    component_type_id = Column(Integer)
-    version = Column(Integer, default=1)
-    component_version = Column(Integer, default=1)
-
-
-# Note: ComponentInfo is now imported from schemas.component and provides 
-# unified interface for both Agent and GroupChat components
 
 
 class GroupChatModel(ComponentModel):
@@ -48,24 +29,54 @@ class GroupChatModel(ComponentModel):
     
     async def to_component_info(self, group_chat: GroupChatTable) -> ComponentInfo:
         """Convert SQLAlchemy model to ComponentInfo"""
+        
+        # Handle labels - can be string (SQLite) or list (PostgreSQL)
+        labels = []
+        if group_chat.labels:
+            if isinstance(group_chat.labels, str):
+                # Handle comma-separated string format for SQLite
+                if group_chat.labels.startswith('[') and group_chat.labels.endswith(']'):
+                    try:
+                        labels = json.loads(group_chat.labels)
+                    except (json.JSONDecodeError, ValueError):
+                        labels = []
+                else:
+                    # Handle comma-separated format
+                    labels = [label.strip() for label in group_chat.labels.split(',') if label.strip()]
+            elif isinstance(group_chat.labels, list):
+                labels = group_chat.labels
+        
+        # Handle participants - can be JSON string (SQLite) or list (PostgreSQL)
+        participants = []
+        if group_chat.participants:
+            if isinstance(group_chat.participants, str):
+                try:
+                    participants = json.loads(group_chat.participants)
+                except (json.JSONDecodeError, ValueError):
+                    participants = []
+            elif isinstance(group_chat.participants, list):
+                participants = group_chat.participants
+        
         if group_chat.type == "selector_group_chat":
             return SelectorGroupChatConfig(
                 type="selector_group_chat",
                 name=group_chat.name,
                 description=group_chat.description or "",
-                labels=group_chat.labels if group_chat.labels else [],
+                labels=labels,
                 selector_prompt=group_chat.selector_prompt or "",
-                participants=group_chat.participants if group_chat.participants else [],
+                participants=participants,
                 model_client=group_chat.model_client or ""
             )
         else:
-            # Fallback for unknown types - return basic ComponentInfo
-            return ComponentInfo(
-                type=group_chat.type,
+            # Fallback for unknown types - treat as selector group chat with empty fields
+            return SelectorGroupChatConfig(
+                type="selector_group_chat",
                 name=group_chat.name,
                 description=group_chat.description or "",
-                labels=group_chat.labels if group_chat.labels else [],
-                model_client=group_chat.model_client
+                labels=labels,
+                selector_prompt="",
+                participants=[],
+                model_client=group_chat.model_client or ""
             )
     
     async def create_group_chat(self, 
@@ -80,15 +91,40 @@ class GroupChatModel(ComponentModel):
         """创建新的GroupChat"""
         async with await self.db.get_session() as session:
             try:
+                # Handle labels - convert to appropriate format based on database
+                labels_data = labels or []
+                if isinstance(labels_data, list) and labels_data:
+                    # For SQLite compatibility, store as comma-separated string or JSON
+                    if "sqlite" in str(self.db.database_url).lower():
+                        labels_value = ",".join(labels_data) if labels_data else None
+                    else:
+                        labels_value = labels_data
+                else:
+                    labels_value = None
+                
+                # Handle participants - convert to appropriate format based on database  
+                participants_data = participants or []
+                if isinstance(participants_data, list):
+                    if "sqlite" in str(self.db.database_url).lower():
+                        participants_value = json.dumps(participants_data)
+                    else:
+                        participants_value = participants_data
+                else:
+                    participants_value = json.dumps([])
+                
+                # Generate UUID for SQLite if needed
+                group_chat_uuid = str(uuid.uuid4()) if "sqlite" in str(self.db.database_url).lower() else None
+                
                 new_group_chat = GroupChatTable(
                     name=name,
                     type=type,
                     description=description,
-                    labels=labels or [],
+                    labels=labels_value,
                     selector_prompt=selector_prompt,
-                    participants=participants or [],
+                    participants=participants_value,
                     model_client=model_client,
-                    created_by=created_by
+                    created_by=created_by,
+                    group_chat_uuid=group_chat_uuid
                 )
                 
                 session.add(new_group_chat)
@@ -111,6 +147,15 @@ class GroupChatModel(ComponentModel):
 
                 if not update_data:
                     return True
+
+                # Handle special fields for SQLite compatibility
+                if 'labels' in update_data and isinstance(update_data['labels'], list):
+                    if "sqlite" in str(self.db.database_url).lower():
+                        update_data['labels'] = ",".join(update_data['labels']) if update_data['labels'] else None
+                
+                if 'participants' in update_data and isinstance(update_data['participants'], list):
+                    if "sqlite" in str(self.db.database_url).lower():
+                        update_data['participants'] = json.dumps(update_data['participants'])
 
                 update_data['updated_at'] = func.current_timestamp()
 
