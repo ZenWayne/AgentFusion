@@ -15,8 +15,9 @@ from chainlit.logger import logger
 from data_layer.models.base_model import BaseModel
 from .tables.step_table import StepsTable
 
-from sqlalchemy import select, insert, update, delete, and_, text
+from sqlalchemy import select, insert, update, delete, and_, text, or_
 from sqlalchemy.sql import func
+from sqlalchemy.orm import selectinload
 
 if TYPE_CHECKING:
     from chainlit.step import StepDict
@@ -121,7 +122,7 @@ class StepModel(BaseModel):
                         thread_id=step_dict.get("threadId"),
                         parent_id=step_dict.get("parentId"),
                         input=step_dict.get("input"),
-                        metadata=step_dict.get("metadata", {}),
+                        step_metadata=step_dict.get("metadata", {}),
                         name=step_dict.get("name"),
                         output=step_dict.get("output"),
                         type=step_dict["type"],
@@ -190,6 +191,17 @@ class StepModel(BaseModel):
             
             return self._convert_step_row_to_dict(dict(row._mapping))
     
+    async def get_step_by_id(self, step_id: str) -> Optional[StepInfo]:
+        """根据ID获取步骤信息（纯ORM版本）"""
+        async with await self.db.get_session() as session:
+            stmt = select(StepsTable).where(StepsTable.id == step_id)
+            result = await session.execute(stmt)
+            step = result.scalar_one_or_none()
+            
+            if step:
+                return self._model_to_info(step)
+            return None
+    
     async def get_steps_by_thread(self, thread_id: str) -> List[StepDict]:
         """获取线程的所有步骤"""
         async with await self.db.get_session() as session:
@@ -210,6 +222,19 @@ class StepModel(BaseModel):
             rows = result.fetchall()
             
             return [self._convert_step_row_to_dict(dict(row._mapping)) for row in rows]
+    
+    async def get_steps_by_thread_orm(self, thread_id: str) -> List[StepInfo]:
+        """获取线程的所有步骤（纯ORM版本）"""
+        async with await self.db.get_session() as session:
+            stmt = (
+                select(StepsTable)
+                .where(StepsTable.thread_id == thread_id)
+                .order_by(StepsTable.start_time)
+            )
+            result = await session.execute(stmt)
+            steps = result.scalars().all()
+            
+            return [self._model_to_info(step) for step in steps]
     
     async def get_child_steps(self, parent_id: str) -> List[StepDict]:
         """获取子步骤"""
@@ -232,6 +257,19 @@ class StepModel(BaseModel):
             
             return [self._convert_step_row_to_dict(dict(row._mapping)) for row in rows]
     
+    async def get_child_steps_orm(self, parent_id: str) -> List[StepInfo]:
+        """获取子步骤（纯ORM版本）"""
+        async with await self.db.get_session() as session:
+            stmt = (
+                select(StepsTable)
+                .where(StepsTable.parent_id == parent_id)
+                .order_by(StepsTable.start_time)
+            )
+            result = await session.execute(stmt)
+            steps = result.scalars().all()
+            
+            return [self._model_to_info(step) for step in steps]
+    
     async def get_root_steps(self, thread_id: str) -> List[StepDict]:
         """获取根步骤（没有父步骤的步骤）"""
         async with await self.db.get_session() as session:
@@ -253,6 +291,22 @@ class StepModel(BaseModel):
             
             return [self._convert_step_row_to_dict(dict(row._mapping)) for row in rows]
     
+    async def get_root_steps_orm(self, thread_id: str) -> List[StepInfo]:
+        """获取根步骤（纯ORM版本）"""
+        async with await self.db.get_session() as session:
+            stmt = (
+                select(StepsTable)
+                .where(and_(
+                    StepsTable.thread_id == thread_id,
+                    StepsTable.parent_id.is_(None)
+                ))
+                .order_by(StepsTable.start_time)
+            )
+            result = await session.execute(stmt)
+            steps = result.scalars().all()
+            
+            return [self._model_to_info(step) for step in steps]
+    
     async def update_step_output(self, step_id: str, output: Any):
         """更新步骤输出"""
         async with await self.db.get_session() as session:
@@ -266,8 +320,9 @@ class StepModel(BaseModel):
                         updated_at=func.current_timestamp()
                     )
                 )
-                await session.execute(stmt)
+                result = await session.execute(stmt)
                 await session.commit()
+                return result.rowcount > 0
             except Exception as e:
                 await session.rollback()
                 logger.error(f"Error updating step output: {e}")
@@ -290,6 +345,8 @@ class StepModel(BaseModel):
                         step.output = error_message
                     
                     await session.commit()
+                    return True
+                return False
             except Exception as e:
                 await session.rollback()
                 logger.error(f"Error marking step as error: {e}")
@@ -298,12 +355,20 @@ class StepModel(BaseModel):
     async def get_step_statistics(self, thread_id: Optional[str] = None) -> Dict[str, Any]:
         """获取步骤统计信息"""
         async with await self.db.get_session() as session:
-            base_query = """
+            # Check database type to use appropriate duration calculation
+            engine_dialect = session.bind.dialect.name
+            
+            if engine_dialect == 'postgresql':
+                duration_calc = "AVG(EXTRACT(EPOCH FROM (end_time - start_time)))"
+            else:  # SQLite and other databases
+                duration_calc = "AVG(CAST((julianday(end_time) - julianday(start_time)) * 86400 AS REAL))"
+            
+            base_query = f"""
             SELECT 
                 COUNT(*) as total_steps,
-                COUNT(CASE WHEN is_error = TRUE THEN 1 END) as error_steps,
-                COUNT(CASE WHEN is_error = FALSE THEN 1 END) as success_steps,
-                AVG(EXTRACT(EPOCH FROM (end_time - start_time))) as avg_duration_seconds
+                COUNT(CASE WHEN is_error = 1 THEN 1 END) as error_steps,
+                COUNT(CASE WHEN is_error = 0 THEN 1 END) as success_steps,
+                {duration_calc} as avg_duration_seconds
             FROM steps
             """
             params = {}
@@ -350,6 +415,130 @@ class StepModel(BaseModel):
             
             return [self._convert_step_row_to_dict(dict(row._mapping)) for row in rows]
     
+    async def get_steps_by_type_orm(self, step_type: str, thread_id: Optional[str] = None) -> List[StepInfo]:
+        """根据类型获取步骤（纯ORM版本）"""
+        async with await self.db.get_session() as session:
+            conditions = [StepsTable.type == step_type]
+            if thread_id:
+                conditions.append(StepsTable.thread_id == thread_id)
+            
+            stmt = (
+                select(StepsTable)
+                .where(and_(*conditions))
+                .order_by(StepsTable.start_time)
+            )
+            result = await session.execute(stmt)
+            steps = result.scalars().all()
+            
+            return [self._model_to_info(step) for step in steps]
+    
+    async def get_steps_by_error_status(self, is_error: bool, thread_id: Optional[str] = None) -> List[StepInfo]:
+        """根据错误状态获取步骤"""
+        async with await self.db.get_session() as session:
+            conditions = [StepsTable.is_error == is_error]
+            if thread_id:
+                conditions.append(StepsTable.thread_id == thread_id)
+            
+            stmt = (
+                select(StepsTable)
+                .where(and_(*conditions))
+                .order_by(StepsTable.start_time)
+            )
+            result = await session.execute(stmt)
+            steps = result.scalars().all()
+            
+            return [self._model_to_info(step) for step in steps]
+    
+    async def get_steps_by_time_range(self, start_time: datetime, end_time: datetime, thread_id: Optional[str] = None) -> List[StepInfo]:
+        """根据时间范围获取步骤"""
+        async with await self.db.get_session() as session:
+            conditions = [
+                StepsTable.start_time >= start_time,
+                StepsTable.start_time <= end_time
+            ]
+            if thread_id:
+                conditions.append(StepsTable.thread_id == thread_id)
+            
+            stmt = (
+                select(StepsTable)
+                .where(and_(*conditions))
+                .order_by(StepsTable.start_time)
+            )
+            result = await session.execute(stmt)
+            steps = result.scalars().all()
+            
+            return [self._model_to_info(step) for step in steps]
+    
+    async def update_step_metadata(self, step_id: str, metadata: Dict[str, Any]) -> bool:
+        """更新步骤元数据"""
+        async with await self.db.get_session() as session:
+            try:
+                stmt = (
+                    update(StepsTable)
+                    .where(StepsTable.id == step_id)
+                    .values(
+                        step_metadata=metadata,
+                        updated_at=func.current_timestamp()
+                    )
+                )
+                result = await session.execute(stmt)
+                await session.commit()
+                return result.rowcount > 0
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error updating step metadata: {e}")
+                raise
+    
+    async def bulk_update_steps(self, step_updates: List[Dict[str, Any]]) -> int:
+        """批量更新步骤"""
+        async with await self.db.get_session() as session:
+            try:
+                updated_count = 0
+                for update_data in step_updates:
+                    step_id = update_data.pop('id')
+                    update_data['updated_at'] = func.current_timestamp()
+                    
+                    stmt = (
+                        update(StepsTable)
+                        .where(StepsTable.id == step_id)
+                        .values(**update_data)
+                    )
+                    result = await session.execute(stmt)
+                    updated_count += result.rowcount
+                
+                await session.commit()
+                return updated_count
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error bulk updating steps: {e}")
+                raise
+    
+    async def delete_steps_by_thread(self, thread_id: str) -> int:
+        """删除线程的所有步骤"""
+        async with await self.db.get_session() as session:
+            try:
+                # 删除相关的元素和反馈
+                await session.execute(
+                    text('DELETE FROM elements WHERE step_id IN (SELECT id FROM steps WHERE thread_id = :thread_id)'),
+                    {'thread_id': thread_id}
+                )
+                await session.execute(
+                    text('DELETE FROM feedbacks WHERE for_id IN (SELECT id FROM steps WHERE thread_id = :thread_id)'),
+                    {'thread_id': thread_id}
+                )
+                
+                # 删除步骤
+                stmt = delete(StepsTable).where(StepsTable.thread_id == thread_id)
+                result = await session.execute(stmt)
+                deleted_count = result.rowcount
+                
+                await session.commit()
+                return deleted_count
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error deleting steps by thread: {e}")
+                raise
+    
     def _extract_feedback_dict_from_step_row(self, row: Dict) -> Optional[FeedbackDict]:
         """从步骤行数据中提取反馈信息"""
         if row.get("feedback_id") is not None:
@@ -363,6 +552,13 @@ class StepModel(BaseModel):
 
     def _convert_step_row_to_dict(self, row: Dict) -> StepDict:
         """将数据库行转换为步骤字典"""
+        metadata = row.get("metadata", {})
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except (json.JSONDecodeError, ValueError):
+                metadata = {}
+        
         return StepDict(
             id=str(row["id"]),
             threadId=str(row["thread_id"]) if row.get("thread_id") else "",
@@ -371,7 +567,7 @@ class StepModel(BaseModel):
             type=row["type"],
             input=row.get("input", {}),
             output=row.get("output", {}),
-            metadata=json.loads(row.get("metadata", "{}")),
+            metadata=metadata,
             createdAt=row["created_at"].isoformat() if row.get("created_at") else None,
             start=row["start_time"].isoformat() if row.get("start_time") else None,
             showInput=row.get("show_input"),

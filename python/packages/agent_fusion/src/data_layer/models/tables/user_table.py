@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, func, ForeignKey, CheckConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUuid
+from sqlalchemy.orm import relationship
 from .base_table import Base
 
 
@@ -30,6 +31,10 @@ class UserTable(Base):
     updated_at = Column(DateTime, server_default=func.current_timestamp())
     created_by = Column(Integer)  # Self-referencing FK to User.id
     user_metadata = Column(JSONB, default={})
+    
+    # Relationships
+    threads = relationship("ThreadTable", back_populates="user")
+    feedbacks = relationship("FeedbackTable", back_populates="user")
     
     __table_args__ = (
         CheckConstraint('role IN ("user", "admin", "reviewer", "developer", "system")', name='check_role'),

@@ -1,5 +1,6 @@
 from sqlalchemy import Column, String, Text, BigInteger, Integer, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
 from .base_table import Base
 
 
@@ -21,3 +22,7 @@ class ElementTable(Base):
     language = Column(String)
     page_number = Column(Integer)
     props = Column(JSONB, default={})
+    
+    # Relationships
+    thread = relationship("ThreadTable", back_populates="elements")
+    step = relationship("StepsTable", back_populates="elements")

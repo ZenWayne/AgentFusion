@@ -14,9 +14,10 @@ from chainlit.logger import logger
 
 from data_layer.models.base_model import BaseModel
 from .tables.feedback_table import FeedbackTable
+from .tables.step_table import StepsTable
 
-from sqlalchemy import select, insert, update, delete, and_, text
-from sqlalchemy.sql import func
+from sqlalchemy import select, insert, update, delete, and_, func, desc, case
+from sqlalchemy.sql import func as sql_func
 
 
 @dataclass
@@ -70,10 +71,8 @@ class FeedbackModel(BaseModel):
                 # 从步骤获取thread_id（如果没有提供的话）
                 thread_id = None
                 if feedback.forId:
-                    step_result = await session.execute(
-                        text("SELECT thread_id FROM steps WHERE id = :step_id"), 
-                        {'step_id': feedback.forId}
-                    )
+                    step_stmt = select(StepsTable.thread_id).where(StepsTable.id == feedback.forId)
+                    step_result = await session.execute(step_stmt)
                     step_row = step_result.first()
                     thread_id = step_row[0] if step_row else None
                 
@@ -86,7 +85,7 @@ class FeedbackModel(BaseModel):
                     # 更新现有反馈
                     existing_feedback.value = int(feedback.value)
                     existing_feedback.comment = feedback.comment
-                    existing_feedback.updated_at = func.current_timestamp()
+                    existing_feedback.updated_at = datetime.utcnow()
                 else:
                     # 创建新反馈
                     new_feedback = FeedbackTable(
@@ -172,153 +171,205 @@ class FeedbackModel(BaseModel):
 
     async def get_feedback_statistics(self, thread_id: Optional[str] = None) -> Dict[str, Any]:
         """获取反馈统计信息"""
-        base_query = """
-        SELECT 
-            COUNT(*) as total_feedbacks,
-            AVG(value) as avg_rating,
-            MAX(value) as max_rating,
-            MIN(value) as min_rating,
-            COUNT(CASE WHEN value >= 4 THEN 1 END) as positive_feedbacks,
-            COUNT(CASE WHEN value <= 2 THEN 1 END) as negative_feedbacks
-        FROM feedbacks
-        """
-        params = []
-        
-        if thread_id:
-            base_query += " WHERE thread_id = $1"
-            params.append(thread_id)
-        
-        result = await self.execute_single_query(base_query, params)
-        return dict(result) if result else {
-            "total_feedbacks": 0,
-            "avg_rating": 0,
-            "max_rating": 0,
-            "min_rating": 0,
-            "positive_feedbacks": 0,
-            "negative_feedbacks": 0
-        }
+        async with await self.db.get_session() as session:
+            # Build base query
+            stmt = select(
+                func.count().label('total_feedbacks'),
+                func.avg(FeedbackTable.value).label('avg_rating'),
+                func.max(FeedbackTable.value).label('max_rating'),
+                func.min(FeedbackTable.value).label('min_rating'),
+                func.count(case((FeedbackTable.value >= 4, 1))).label('positive_feedbacks'),
+                func.count(case((FeedbackTable.value <= 2, 1))).label('negative_feedbacks')
+            )
+            
+            if thread_id:
+                stmt = stmt.where(FeedbackTable.thread_id == thread_id)
+            
+            result = await session.execute(stmt)
+            row = result.first()
+            
+            if row:
+                return {
+                    "total_feedbacks": row.total_feedbacks or 0,
+                    "avg_rating": float(row.avg_rating) if row.avg_rating else 0,
+                    "max_rating": row.max_rating or 0,
+                    "min_rating": row.min_rating or 0,
+                    "positive_feedbacks": row.positive_feedbacks or 0,
+                    "negative_feedbacks": row.negative_feedbacks or 0
+                }
+            else:
+                return {
+                    "total_feedbacks": 0,
+                    "avg_rating": 0,
+                    "max_rating": 0,
+                    "min_rating": 0,
+                    "positive_feedbacks": 0,
+                    "negative_feedbacks": 0
+                }
 
     async def get_feedback_trends(self, days: int = 30) -> List[Dict[str, Any]]:
         """获取反馈趋势（按天统计）"""
-        query = """
-        SELECT 
-            DATE(created_at) as date,
-            COUNT(*) as total_count,
-            AVG(value) as avg_rating
-        FROM feedbacks 
-        WHERE created_at >= CURRENT_DATE - INTERVAL '%s days'
-        GROUP BY DATE(created_at)
-        ORDER BY date
-        """
-        results = await self.execute_query(query % days, [])
+        from datetime import timedelta
         
-        return [
-            {
-                "date": row["date"].isoformat(),
-                "total_count": row["total_count"],
-                "avg_rating": float(row["avg_rating"]) if row["avg_rating"] else 0
-            }
-            for row in results
-        ]
+        async with await self.db.get_session() as session:
+            cutoff_date = datetime.utcnow() - timedelta(days=days)
+            
+            stmt = select(
+                func.date(FeedbackTable.created_at).label('date'),
+                func.count().label('total_count'),
+                func.avg(FeedbackTable.value).label('avg_rating')
+            ).where(
+                FeedbackTable.created_at >= cutoff_date
+            ).group_by(
+                func.date(FeedbackTable.created_at)
+            ).order_by('date')
+            
+            result = await session.execute(stmt)
+            rows = result.all()
+            
+            return [
+                {
+                    "date": row.date.isoformat() if row.date else None,
+                    "total_count": row.total_count or 0,
+                    "avg_rating": float(row.avg_rating) if row.avg_rating else 0
+                }
+                for row in rows
+            ]
 
     async def get_top_rated_steps(self, limit: int = 10) -> List[Dict[str, Any]]:
         """获取评分最高的步骤"""
-        query = """
-        SELECT 
-            s.id as step_id,
-            s.name as step_name,
-            s.type as step_type,
-            s.thread_id,
-            AVG(f.value) as avg_rating,
-            COUNT(f.id) as feedback_count
-        FROM steps s
-        JOIN feedbacks f ON s.id = f.for_id
-        GROUP BY s.id, s.name, s.type, s.thread_id
-        HAVING COUNT(f.id) >= 2  -- 至少有2个反馈
-        ORDER BY avg_rating DESC, feedback_count DESC
-        LIMIT $1
-        """
-        results = await self.execute_query(query, [limit])
-        
-        return [
-            {
-                "step_id": row["step_id"],
-                "step_name": row["step_name"],
-                "step_type": row["step_type"],
-                "thread_id": row["thread_id"],
-                "avg_rating": float(row["avg_rating"]),
-                "feedback_count": row["feedback_count"]
-            }
-            for row in results
-        ]
+        async with await self.db.get_session() as session:
+            stmt = select(
+                StepsTable.id.label('step_id'),
+                StepsTable.name.label('step_name'),
+                StepsTable.type.label('step_type'),
+                StepsTable.thread_id,
+                func.avg(FeedbackTable.value).label('avg_rating'),
+                func.count(FeedbackTable.id).label('feedback_count')
+            ).join(
+                FeedbackTable, StepsTable.id == FeedbackTable.for_id
+            ).group_by(
+                StepsTable.id, StepsTable.name, StepsTable.type, StepsTable.thread_id
+            ).having(
+                func.count(FeedbackTable.id) >= 2  # 至少有2个反馈
+            ).order_by(
+                desc('avg_rating'), desc('feedback_count')
+            ).limit(limit)
+            
+            result = await session.execute(stmt)
+            rows = result.all()
+            
+            return [
+                {
+                    "step_id": row.step_id,
+                    "step_name": row.step_name,
+                    "step_type": row.step_type,
+                    "thread_id": row.thread_id,
+                    "avg_rating": float(row.avg_rating) if row.avg_rating else 0,
+                    "feedback_count": row.feedback_count or 0
+                }
+                for row in rows
+            ]
 
     async def get_feedbacks_with_comments(self, thread_id: Optional[str] = None) -> List[FeedbackDict]:
         """获取带有评论的反馈"""
-        query = """
-        SELECT * FROM feedbacks 
-        WHERE comment IS NOT NULL AND comment != ''
-        """
-        params = []
-        
-        if thread_id:
-            query += " AND thread_id = $1"
-            params.append(thread_id)
-        
-        query += " ORDER BY created_at DESC"
-        
-        results = await self.execute_query(query, params)
-        return [self._convert_feedback_row_to_dict(row) for row in results]
+        async with await self.db.get_session() as session:
+            stmt = select(FeedbackTable).where(
+                and_(
+                    FeedbackTable.comment.isnot(None),
+                    FeedbackTable.comment != ''
+                )
+            )
+            
+            if thread_id:
+                stmt = stmt.where(FeedbackTable.thread_id == thread_id)
+            
+            stmt = stmt.order_by(desc(FeedbackTable.created_at))
+            
+            result = await session.execute(stmt)
+            feedbacks = result.scalars().all()
+            
+            return [self._convert_feedback_info_to_dict(self._feedback_to_info(f)) for f in feedbacks]
 
     async def update_feedback_value(self, feedback_id: str, value: float) -> bool:
         """更新反馈评分"""
-        query = """
-        UPDATE feedbacks 
-        SET value = $1, updated_at = CURRENT_TIMESTAMP
-        WHERE id = $2
-        """
-        await self.execute_command(query, [value, feedback_id])
-        return True
+        async with await self.db.get_session() as session:
+            try:
+                stmt = update(FeedbackTable).where(
+                    FeedbackTable.id == feedback_id
+                ).values(
+                    value=int(value),
+                    updated_at=datetime.utcnow()
+                )
+                await session.execute(stmt)
+                await session.commit()
+                return True
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error updating feedback value: {e}")
+                return False
 
     async def update_feedback_comment(self, feedback_id: str, comment: str) -> bool:
         """更新反馈评论"""
-        query = """
-        UPDATE feedbacks 
-        SET comment = $1, updated_at = CURRENT_TIMESTAMP
-        WHERE id = $2
-        """
-        await self.execute_command(query, [comment, feedback_id])
-        return True
+        async with await self.db.get_session() as session:
+            try:
+                stmt = update(FeedbackTable).where(
+                    FeedbackTable.id == feedback_id
+                ).values(
+                    comment=comment,
+                    updated_at=datetime.utcnow()
+                )
+                await session.execute(stmt)
+                await session.commit()
+                return True
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error updating feedback comment: {e}")
+                return False
 
     async def batch_delete_feedbacks(self, feedback_ids: List[str]) -> int:
         """批量删除反馈"""
         if not feedback_ids:
             return 0
         
-        query = """
-        DELETE FROM feedbacks 
-        WHERE id = ANY($1)
-        """
-        await self.execute_command(query, [feedback_ids])
-        return len(feedback_ids)
+        async with await self.db.get_session() as session:
+            try:
+                stmt = delete(FeedbackTable).where(FeedbackTable.id.in_(feedback_ids))
+                result = await session.execute(stmt)
+                await session.commit()
+                return result.rowcount
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error batch deleting feedbacks: {e}")
+                return 0
 
     async def get_feedback_summary_by_type(self, feedback_type: str = "rating") -> Dict[str, Any]:
         """根据反馈类型获取汇总统计"""
-        query = """
-        SELECT 
-            feedback_type,
-            COUNT(*) as total_count,
-            AVG(value) as avg_value,
-            STDDEV(value) as std_deviation
-        FROM feedbacks 
-        WHERE feedback_type = $1
-        GROUP BY feedback_type
-        """
-        result = await self.execute_single_query(query, [feedback_type])
-        
-        return dict(result) if result else {
-            "feedback_type": feedback_type,
-            "total_count": 0,
-            "avg_value": 0,
-            "std_deviation": 0
-        }
+        async with await self.db.get_session() as session:
+            stmt = select(
+                FeedbackTable.feedback_type,
+                func.count().label('total_count'),
+                func.avg(FeedbackTable.value).label('avg_value'),
+                func.stddev(FeedbackTable.value).label('std_deviation')
+            ).where(
+                FeedbackTable.feedback_type == feedback_type
+            ).group_by(FeedbackTable.feedback_type)
+            
+            result = await session.execute(stmt)
+            row = result.first()
+            
+            if row:
+                return {
+                    "feedback_type": row.feedback_type,
+                    "total_count": row.total_count or 0,
+                    "avg_value": float(row.avg_value) if row.avg_value else 0,
+                    "std_deviation": float(row.std_deviation) if row.std_deviation else 0
+                }
+            else:
+                return {
+                    "feedback_type": feedback_type,
+                    "total_count": 0,
+                    "avg_value": 0,
+                    "std_deviation": 0
+                }
 

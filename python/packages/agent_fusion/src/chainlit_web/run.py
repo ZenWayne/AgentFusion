@@ -31,8 +31,7 @@ message_chunks: Dict[str, Message] = {}
 
 @cl.set_chat_profiles
 async def chat_profile():
-    current_user = User()
-    return await current_user.set_chat_profiles(database_layer)
+    return await User.get_chat_profiles(database_layer)
 
 @cl.on_app_startup
 async def on_app_startup() -> None:
@@ -79,7 +78,7 @@ async def start_chat() -> None:
     print("start_chat")
     await chat_settings() 
     current_user = User()   
-    await current_user.start_chat()
+    await current_user.start_chat(database_layer)
 
 @cl.on_stop
 async def on_stop() -> None:

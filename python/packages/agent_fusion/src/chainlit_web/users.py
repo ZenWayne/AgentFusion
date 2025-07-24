@@ -24,13 +24,18 @@ from autogen_agentchat.ui import Console
 from data_layer.data_layer import AgentFusionDataLayer
 from data_layer.models.llm_model import LLMModel
 from builders.agent_builder import AgentBuilder
+from chainlit.types import ChatProfile
 
 MODEL_WIDGET_ID = "Model"  # 常量定义
 
+# @dataclass
+# class ChatProfile(cl.ChatProfile):
+#     #id: Optional[int] = None
+#     component_type: Optional[ComponentType] = None
 @dataclass
 class UserSessionData:
     """Data container for user session information"""
-    chat_profile : Optional[str]
+    chat_profile : Optional[List[ChatProfile]] = None
     component_info_map: Dict[str, ComponentInfo] = field(default_factory=dict)
     current_component_name: Optional[str] = None
     current_component: Optional[Any] = None
@@ -55,13 +60,14 @@ class UserSessionManager:
     async def initialize_component_info_map(self, data_layer_instance: AgentFusionDataLayer):
         """Initialize component_info_map during startup"""
         try:
-            agents = await data_layer_instance.agent.get_all_components()  # Dict[str, ComponentInfo]
+            agents = await data_layer_instance.agent.get_all_components()  # List[ComponentInfo]
             group_chats = await data_layer_instance.group_chat.get_all_components()  # List[ComponentInfo]
             
+            agents_dict = {agent.name: agent for agent in agents}
             # 将group_chats列表转换为字典
             group_chats_dict = {gc.name: gc for gc in group_chats}
             
-            self.component_info_map = {**agents, **group_chats_dict}
+            self.component_info_map = {**agents_dict, **group_chats_dict}
         except Exception as e:
             print(f"Error initializing component_info_map: {e}")
             self.component_info_map = {}
@@ -73,11 +79,8 @@ class UserSessionManager:
     def get_model_list(self):
         return self.model_list
 
-class ChatProfile(cl.ChatProfile):
-    def __init__(self, name: str, description: str, icon: str, id: int, component_type: ComponentType):
-        super().__init__(name, description, icon)
-        self.id = id
-        self.component_type = component_type
+
+
 class User(UserSessionData, UserSession):
     """
     Manages user session data and provides methods for handling dynamic objects
@@ -85,7 +88,7 @@ class User(UserSessionData, UserSession):
     """
     user_session_manager: Optional[UserSessionManager] = None  # 延迟初始化，在startup时设置
     
-    def __init__(self, session_data: Optional[UserSessionData] = None):
+    def __init__(self):
         """
         Initialize User instance
         
@@ -144,7 +147,7 @@ class User(UserSessionData, UserSession):
 
         user_session = self.user_session_manager.user_sessions[context.session.id]
 
-        self.chat_profile = self.set("chat_profile", context.session.chat_profile if context.session else "default")
+        self.chat_profile = self.set("chat_profile", None)
         # component_info_map现在从SessionManager中获取
         self.current_component_name = self.set("current_component_name", "default")
         self.current_component = self.set("current_component", None)
@@ -179,10 +182,14 @@ class User(UserSessionData, UserSession):
     async def start_chat(self, data_layer: AgentFusionDataLayer):
         """Initialize and start chat session"""
         try:
+            if self.chat_profile is None:
+                self.chat_profile = self.set("chat_profile", await User.get_chat_profiles(data_layer))
+
+            component_name = self.chat_profile[0].name
             await cl.Message(
-                content=f"starting chat with {self.identifier} using the {self.chat_profile} chat profile"
+                content=f"starting chat with {self.identifier} using the {component_name} chat profile"
             ).send()
-            component_name = self.chat_profile
+
             # Get component_info_map from session manager
             component_info_map = self.user_session_manager.component_info_map
             await self.setup_new_component(component_name, component_info_map, data_layer)
@@ -207,23 +214,24 @@ class User(UserSessionData, UserSession):
             
             try:
                 # Wait for either message or close signal (like Unix select)
-                done, pending = await asyncio.wait(
+                done, _ = await asyncio.wait(
                     {message_task, close_task}, 
                     return_when=asyncio.FIRST_COMPLETED
                 )
                 
                 # Cancel pending tasks
-                for task in pending:
-                    task.cancel()
-                    try:
-                        await task
-                    except asyncio.CancelledError:
-                        pass
+                # for task in pending:
+                #     task.cancel()
+                #     try:
+                #         await task
+                #     except asyncio.CancelledError:
+                #         pass
                 
                 # Check which task completed
                 for task in done:
                     if task == close_task:
                         # Close signal received
+                        token.cancel()
                         raise asyncio.CancelledError("Chat session closed")
                     elif task == message_task:
                         # Message received
@@ -321,8 +329,8 @@ class User(UserSessionData, UserSession):
                 content=f"设置更新失败: {str(e)}",
                 author="System"
             ).send()
-
-    async def set_chat_profiles(self, data_layer_instance: AgentFusionDataLayer):
+    @staticmethod
+    async def get_chat_profiles(data_layer_instance: AgentFusionDataLayer):
         """设置聊天配置文件，包含profile切换时的agent切换逻辑"""
         try:
             # 从数据库获取可用的agents和group_chats
@@ -332,13 +340,12 @@ class User(UserSessionData, UserSession):
             profiles = []
             
             # 添加Agent选项
-            for agent_name, agent_info in agents.items():
+            for agent_info in agents:
                 profiles.append(ChatProfile(
-                    name=agent_name,
+                    name=agent_info.name,
                     markdown_description=f"**Agent**: {agent_info.description}",
                     icon="https://picsum.photos/200",
-                    id=agent_info.id,
-                    component_type=agent_info.type
+                    #component_type=agent_info.type
                 ))
             
             # 添加GroupChat选项
@@ -347,8 +354,7 @@ class User(UserSessionData, UserSession):
                     name=group_chat.name,
                     markdown_description=f"**Group Chat**: {group_chat.description}",
                     icon="https://picsum.photos/250",
-                    id=group_chat.id,
-                    component_type=group_chat.type
+                    #component_type=group_chat.type
                 ))
             
             # 如果没有从数据库获取到任何配置，使用默认配置

@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, UUID
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
 from .base_table import Base
 
 
@@ -18,3 +19,7 @@ class FeedbackTable(Base):
     feedback_metadata = Column(JSONB, default={})
     created_at = Column(DateTime, server_default=func.current_timestamp())
     updated_at = Column(DateTime, server_default=func.current_timestamp())
+    
+    # Relationships
+    thread = relationship("ThreadTable", back_populates="feedbacks")
+    user = relationship("UserTable", back_populates="feedbacks")

@@ -66,7 +66,6 @@ class GroupChatBuilder:
                 handoff_termination = HandoffTermination(target=group_chat_info.handoff_target)
                 return group_chat_class(
                         participants=participants,
-                        #TODO add this feild in round_robin_group_chat_config and add example in config.json
                         termination_condition=handoff_termination
                     )
             else:

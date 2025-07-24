@@ -25,6 +25,7 @@ class RoundRobinGroupChatConfig(BaseGroupChatConfig):
     type: Literal[GroupChatType.ROUND_ROBIN_GROUP_CHAT]
     participants: list[str]
     handoff_target: str = "user"
+    termination_condition: str = "handoff"
 
 
 GroupChatConfig = Annotated[

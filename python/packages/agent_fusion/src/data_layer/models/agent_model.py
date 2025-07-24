@@ -43,7 +43,7 @@ class AgentModel(ComponentModel, AgentBuilder):
     def model_client_builder(self) -> LLMModel:
         return LLMModel(self.db)
     
-    async def get_all_components(self, filter_active: bool = True) -> Dict[str, ComponentInfo]:
+    async def get_all_components(self, filter_active: bool = True) -> List[ComponentInfo]:
         """
         Get agents for chat profile and return as ComponentInfo objects
         
@@ -73,12 +73,12 @@ class AgentModel(ComponentModel, AgentBuilder):
             result = await session.execute(stmt)
             rows = result.all()
             
-            agent_info = {}
+            agent_info = []
             
             for row in rows:
                 agent = row[0]  # AgentTable object
                 component_info = await self.to_component_info(agent)
-                agent_info[agent.name] = component_info
+                agent_info.append(component_info)
             
             return agent_info
     

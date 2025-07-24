@@ -1,4 +1,4 @@
-from base.utils import get_prompt  
+from base.utils import get_prompt, parse_cwd_placeholders
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
 from agents.codeagent import CodeExecutionAgent
 from schemas.component import ComponentInfo
@@ -34,11 +34,16 @@ class AgentBuilder:
             model_client_config = model_client_builder.get_component_by_name(agent_info.model_client)
             async with model_client_builder.build(model_client_config) as model_client:
                 agent_tools = []
-                for mcp_server in agent_info.mcp_tools:
-                    tools : list[StdioMcpToolAdapter | SseMcpToolAdapter] = await mcp_server_tools(mcp_server)
-                    for tool in tools:
-                        tool.component_label = tool.name
-                    agent_tools.extend(tools)
+                try:
+                    for mcp_server in agent_info.mcp_tools:
+                        for idx, arg in enumerate(mcp_server.args):
+                            mcp_server.args[idx] = parse_cwd_placeholders(arg)
+                        tools : list[StdioMcpToolAdapter | SseMcpToolAdapter] = await mcp_server_tools(mcp_server)
+                        for tool in tools:
+                            tool.component_label = tool.name
+                        agent_tools.extend(tools)
+                except Exception as e:
+                    print(f"Error fetching agent tools: {e}")
                 prompt = agent_info.prompt()
                 agent = AssistantAgent(
                     name=agent_info.name,
@@ -50,6 +55,7 @@ class AgentBuilder:
                     memory=[user_memory],
                     #TODO: read handoff from agent_info and add example in config.json(based on file_system agent)
                     handoffs=[Handoff(target="user", message="Transfer to user.")],
+                    max_tool_iterations=10
                 )
                 agent.component_label = agent_info.name
                 yield agent

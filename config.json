@@ -142,7 +142,8 @@
             "labels":["file_system", "agent"],
             "type": "round_robin_group_chat",
             "participants": ["file_system"],
-            "handoff_target": "user"
+            "handoff_target": "user",
+            "termination_condition": "handoff"
         },
         "prompt_flow": {
             "name": "prompt_flow",
