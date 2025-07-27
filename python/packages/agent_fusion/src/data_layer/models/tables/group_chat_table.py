@@ -1,6 +1,5 @@
 from sqlalchemy import Column, Integer, String, Text, UUID, ARRAY
 from sqlalchemy.sql import func
-from sqlalchemy.dialects.postgresql import JSONB
 from .base_table import BaseComponentTable
 
 
@@ -13,7 +12,8 @@ class GroupChatTable(BaseComponentTable):
     type = Column(String(100), nullable=False)
     labels = Column(ARRAY(Text), default=[])
     selector_prompt = Column(Text)
-    participants = Column(JSONB, default=[])
+    handoff_target = Column(String(255), default='user')
+    termination_condition = Column(String(255), default='handoff')
     model_client = Column(String(255))
     component_type_id = Column(Integer)
     version = Column(Integer, default=1)

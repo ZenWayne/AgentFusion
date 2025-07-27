@@ -11,7 +11,9 @@
       "WebFetch(domain:microsoft.github.io)",
       "Bash(mkdir:*)",
       "Bash(move test_group_chat_model.py data_layermodelstest_group_chat_model.py)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker cp:*)"
     ],
     "deny": []
   }

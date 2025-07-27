@@ -1,5 +1,5 @@
 from asyncio import Queue
-from typing import Any, Awaitable, Callable, List, Tuple, cast, Optional, Type
+from typing import Any, Awaitable, Callable, List, Tuple, cast, Optional, Type, TypeVar
 from autogen_core.model_context import ChatCompletionContext
 from autogen_agentchat.teams._group_chat._selector_group_chat import SelectorGroupChatManager
 from autogen_agentchat.teams import SelectorGroupChat
@@ -32,10 +32,11 @@ from data_layer.data_layer import AgentFusionDataLayer
 from data_layer.models.llm_model import LLMModel
 from data_layer.models.prompt_model import PromptModel
 from data_layer.models.agent_model import AgentModel
-from schemas.component import GroupChatType
+from schemas.group_chat_type import GroupChatType
 from schemas.group_chat import GroupChatType as GroupChatTypeEnum
 from chainlit_web.ui_hook.ui_round_robin_group_chat import UIRoundRobinGroupChat
-
+from chainlit_web.ui_hook.autogen_chat_queue import AutoGenGroupChatQueue
+from autogen_agentchat.base import TaskResult
 ## ref from python\packages\autogen-core\src\autogen_core\_message_context.py
 
 @dataclass
@@ -203,6 +204,46 @@ class UISelectorGroupChat(SelectorGroupChat):
         return lambda: \
             UISelectorGroupChatAgentChatContainer(parent_topic_type, output_topic_type, agent, message_factory)
 
+T = TypeVar('T', bound=GroupChatType)
+class UIAutoGenGroupChatQueue(AutoGenGroupChatQueue[T]):
+    def __init__(self, group_chat_instance: T, model_client_streaming: bool = False):
+        super().__init__(group_chat_instance)
+        self._model_client_streaming = model_client_streaming
+
+    async def handle_group_chat_termination(self, message: GroupChatTermination) -> None:
+        """Handle GroupChatTermination messages"""
+        pass
+    
+    async def handle_agent_event(self, message: BaseAgentEvent) -> None:
+        """Handle BaseAgentEvent messages"""
+        pass
+    
+    async def handle_chat_message(self, message: BaseChatMessage) -> None:
+        """Handle BaseChatMessage messages"""
+        if isinstance(message, TextMessage):
+            # Check if the message is from a user - if so, skip streaming
+            # Only stream messages from AI agents, not from human users
+            if self._model_client_streaming == False:
+                self._response = cl.Message(content="", author=message.source)
+                await self._response.stream_token(message.content)
+                await self._response.update()                
+        elif isinstance(message, ModelClientStreamingChunkEvent):
+            if self.streaming_event == False:
+                self.streaming_event = True
+                self._response = cl.Message(author=message.source, content="")                
+            await self._response.stream_token(message.to_text())
+        else:
+            pass
+    
+    async def handle_unknown_message(self, message: Any) -> None:
+        """Handle unknown message types"""
+        pass
+    
+    async def task_finished(self, task_result: TaskResult) -> None:
+        """Handle task completion - can be overridden by derived classes"""
+        self.streaming_event = False
+        await self._response.send()
+
 class UIGroupChatBuilder(GroupChatBuilderBase):
     def __init__(self, 
                  data_layer: AgentFusionDataLayer,
@@ -218,6 +259,9 @@ class UIGroupChatBuilder(GroupChatBuilderBase):
 
     def model_client_builder(self) -> AgentModel:
         return AgentModel(self._data_layer)
+    
+    def group_chat_queue_builder(self, group_chat_instance: GroupChatType) -> UIAutoGenGroupChatQueue:
+        return UIAutoGenGroupChatQueue(group_chat_instance, self._model_client_streaming)
 
     def _group_chat_map(self, GroupChatTypeEnum: GroupChatTypeEnum) -> Type[GroupChatType]:
         return {

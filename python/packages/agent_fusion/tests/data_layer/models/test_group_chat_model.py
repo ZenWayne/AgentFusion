@@ -22,7 +22,7 @@ from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from data_layer.base_data_layer import DBDataLayer
 from data_layer.models.group_chat_model import GroupChatModel
 from data_layer.models.tables import (
-    Base, BaseComponentTable, GroupChatTable
+    Base, BaseComponentTable, GroupChatTable, AgentTable, GroupChatParticipantsTable
 )
 from schemas.component import ComponentInfo
 from schemas.group_chat import SelectorGroupChatConfig, RoundRobinGroupChatConfig, GroupChatType
@@ -124,10 +124,43 @@ async def group_chat_model(sqlite_db):
 
 
 @pytest_asyncio.fixture
-async def sample_selector_group_chat(sqlite_db):
+async def sample_agents(sqlite_db):
+    """Create sample agents for testing"""
+    async with await sqlite_db.get_session() as session:
+        agents = [
+            AgentTable(
+                id=1,
+                name="agent1",
+                label="Agent 1",
+                provider="test_provider",
+                agent_uuid=str(uuid.uuid4())
+            ),
+            AgentTable(
+                id=2,
+                name="agent2",
+                label="Agent 2", 
+                provider="test_provider",
+                agent_uuid=str(uuid.uuid4())
+            ),
+            AgentTable(
+                id=3,
+                name="agent3",
+                label="Agent 3",
+                provider="test_provider",
+                agent_uuid=str(uuid.uuid4())
+            )
+        ]
+        for agent in agents:
+            session.add(agent)
+        await session.commit()
+        return agents
+
+
+@pytest_asyncio.fixture
+async def sample_selector_group_chat(sqlite_db, sample_agents):
     """Create a sample selector group chat for testing"""
     async with await sqlite_db.get_session() as session:
-        # For SQLite, we need to handle arrays differently
+        # Create group chat without participants field
         group_chat = GroupChatTable(
             id=1,
             name="test-selector-chat",
@@ -135,18 +168,40 @@ async def sample_selector_group_chat(sqlite_db):
             description="A test selector group chat",
             labels="test,selector",  # Store as comma-separated string for SQLite
             selector_prompt="Select the best participant for this task",
-            participants=json.dumps(["agent1", "agent2", "agent3"]),  # Store as JSON string
             model_client=model_client.deepseek_chat_DeepSeek.value,
             group_chat_uuid=str(uuid.uuid4())
         )
         session.add(group_chat)
         await session.commit()
         await session.refresh(group_chat)
+        
+        # Add participants via relationship table
+        participants = [
+            GroupChatParticipantsTable(
+                group_chat_id=group_chat.id,
+                agent_id=1,
+                join_order=0
+            ),
+            GroupChatParticipantsTable(
+                group_chat_id=group_chat.id,
+                agent_id=2,
+                join_order=1
+            ),
+            GroupChatParticipantsTable(
+                group_chat_id=group_chat.id,
+                agent_id=3,
+                join_order=2
+            )
+        ]
+        for participant in participants:
+            session.add(participant)
+        await session.commit()
+        
         return group_chat
 
 
 @pytest_asyncio.fixture
-async def sample_round_robin_group_chat(sqlite_db):
+async def sample_round_robin_group_chat(sqlite_db, sample_agents):
     """Create a sample round robin group chat for testing"""
     async with await sqlite_db.get_session() as session:
         group_chat = GroupChatTable(
@@ -155,12 +210,31 @@ async def sample_round_robin_group_chat(sqlite_db):
             type="round_robin_group_chat",
             description="A test round robin group chat",
             labels="test,round_robin",  # Store as comma-separated string for SQLite
-            participants=json.dumps(["agent1", "agent2"]),  # Store as JSON string
+            handoff_target="user",
+            termination_condition="handoff",
             group_chat_uuid=str(uuid.uuid4())
         )
         session.add(group_chat)
         await session.commit()
         await session.refresh(group_chat)
+        
+        # Add participants via relationship table
+        participants = [
+            GroupChatParticipantsTable(
+                group_chat_id=group_chat.id,
+                agent_id=1,
+                join_order=0
+            ),
+            GroupChatParticipantsTable(
+                group_chat_id=group_chat.id,
+                agent_id=2,
+                join_order=1
+            )
+        ]
+        for participant in participants:
+            session.add(participant)
+        await session.commit()
+        
         return group_chat
 
 
@@ -203,7 +277,6 @@ class TestGroupChatModel:
                 is_active=False,
                 group_chat_uuid=str(uuid.uuid4()),
                 selector_prompt="Test prompt",
-                participants=json.dumps(["agent1"]),
                 model_client=model_client.deepseek_chat_DeepSeek.value,
                 labels="inactive"  # Use string instead of empty list
             )
@@ -261,7 +334,7 @@ class TestGroupChatModel:
         assert component_info.model_client == model_client.deepseek_chat_DeepSeek.value
 
     @pytest.mark.asyncio
-    async def test_create_group_chat_selector(self, group_chat_model):
+    async def test_create_group_chat_selector(self, group_chat_model, sample_agents):
         """Test create_group_chat for selector type"""
         result: Optional[int] = await group_chat_model.create_group_chat(
             name="new-selector-chat",
@@ -315,7 +388,6 @@ class TestGroupChatModel:
             assert created_chat.type == "round_robin_group_chat"
             assert created_chat.description is None
             assert created_chat.labels is None  # SQLite stores as None when no labels provided
-            assert created_chat.participants == json.dumps([])  # SQLite stores as JSON string
 
     @pytest.mark.asyncio
     async def test_update_group_chat(self, group_chat_model, sample_selector_group_chat):
@@ -398,7 +470,7 @@ class TestGroupChatModel:
             description="Updated via component interface",
             labels=["updated", "component"],
             selector_prompt="Updated selector prompt",
-            participants=["new_agent1", "new_agent2"],
+            participants=["agent1", "agent2"],  # Use existing agents
             model_client=model_client.deepseek_reasoner_DeepSeek
         )
         
@@ -412,7 +484,10 @@ class TestGroupChatModel:
         assert result.description == "Updated via component interface"
         assert result.labels == ["updated", "component"]
         assert result.selector_prompt == "Updated selector prompt"
-        assert result.participants == ["new_agent1", "new_agent2"]
+        # The update should reduce from 3 to 2 participants
+        assert len(result.participants) == 2
+        assert "agent1" in result.participants
+        assert "agent2" in result.participants
         assert result.model_client == model_client.deepseek_reasoner_DeepSeek
 
     @pytest.mark.asyncio
@@ -475,7 +550,6 @@ class TestGroupChatModel:
                 description="Chat with string labels",
                 labels="test,string",  # String instead of list
                 selector_prompt="Test prompt",
-                participants=json.dumps(["agent1"]),
                 model_client=model_client.deepseek_chat_DeepSeek.value,
                 group_chat_uuid=str(uuid.uuid4())
             )
@@ -517,6 +591,173 @@ class TestGroupChatModel:
         assert component_info.selector_prompt == ""
         assert component_info.participants == []
         assert component_info.model_client == model_client.deepseek_chat_DeepSeek.value
+
+    @pytest.mark.asyncio
+    async def test_get_all_components_with_participants_join(self, group_chat_model, sample_agents):
+        """Test get_all_components method uses JOIN query with group_chat_participants table"""
+        # Create multiple group chats with different participants
+        gc1_id = await group_chat_model.create_group_chat(
+            name="chat-with-agents",
+            type="selector_group_chat",
+            description="Chat with multiple agents",
+            labels=["test", "join"],
+            selector_prompt="Test prompt",
+            participants=["agent1", "agent2", "agent3"],
+            model_client=model_client.deepseek_chat_DeepSeek.value,
+            created_by=1
+        )
+        
+        gc2_id = await group_chat_model.create_group_chat(
+            name="chat-single-agent",
+            type="selector_group_chat", 
+            description="Chat with single agent",
+            labels=["test", "single"],
+            selector_prompt="Single prompt",
+            participants=["agent1"],
+            model_client=model_client.deepseek_chat_DeepSeek.value,
+            created_by=1
+        )
+        
+        gc3_id = await group_chat_model.create_group_chat(
+            name="chat-no-agents",
+            type="selector_group_chat",
+            description="Chat with no agents",
+            labels=["test", "empty"],
+            selector_prompt="Empty prompt", 
+            participants=[],
+            model_client=model_client.deepseek_chat_DeepSeek.value,
+            created_by=1
+        )
+        
+        # Get all components using the overridden method
+        all_components = await group_chat_model.get_all_components()
+        
+        # Should return all 3 created group chats plus any from fixtures
+        assert len(all_components) >= 3
+        
+        # Find our specific test group chats
+        chat_with_agents = next((gc for gc in all_components if gc.name == "chat-with-agents"), None)
+        chat_single_agent = next((gc for gc in all_components if gc.name == "chat-single-agent"), None)
+        chat_no_agents = next((gc for gc in all_components if gc.name == "chat-no-agents"), None)
+        
+        assert chat_with_agents is not None
+        assert chat_single_agent is not None
+        assert chat_no_agents is not None
+        
+        # Verify participants are correctly loaded via JOIN
+        assert len(chat_with_agents.participants) == 3
+        assert set(chat_with_agents.participants) == {"agent1", "agent2", "agent3"}
+        
+        assert len(chat_single_agent.participants) == 1
+        assert chat_single_agent.participants == ["agent1"]
+        
+        assert len(chat_no_agents.participants) == 0
+        assert chat_no_agents.participants == []
+        
+        # Verify other properties are correctly loaded
+        assert chat_with_agents.description == "Chat with multiple agents"
+        assert chat_with_agents.labels == ["test", "join"]
+        assert chat_with_agents.selector_prompt == "Test prompt"
+
+    @pytest.mark.asyncio
+    async def test_get_all_components_preserves_participant_order(self, group_chat_model, sample_agents):
+        """Test get_all_components preserves participant join order"""
+        # Create group chat with specific participant order
+        gc_id = await group_chat_model.create_group_chat(
+            name="ordered-chat",
+            type="selector_group_chat",
+            description="Chat with ordered participants",
+            participants=["agent3", "agent1", "agent2"],  # Specific order
+            model_client=model_client.deepseek_chat_DeepSeek.value,
+            created_by=1
+        )
+        
+        # Get all components
+        all_components = await group_chat_model.get_all_components()
+        
+        # Find our test group chat
+        ordered_chat = next((gc for gc in all_components if gc.name == "ordered-chat"), None)
+        assert ordered_chat is not None
+        
+        # Verify participant order is preserved (should match join_order, not agent names)
+        assert ordered_chat.participants == ["agent3", "agent1", "agent2"]
+
+    @pytest.mark.asyncio
+    async def test_create_round_robin_group_chat(self, group_chat_model, sample_agents):
+        """Test create_group_chat for round robin type with handoff_target and termination_condition"""
+        result: Optional[int] = await group_chat_model.create_group_chat(
+            name="round-robin-chat",
+            type="round_robin_group_chat",
+            description="Round robin chat test",
+            labels=["test", "round_robin"],
+            participants=["agent1", "agent2"],
+            handoff_target="user",
+            termination_condition="handoff",
+            created_by=1
+        )
+        
+        assert result is not None
+        assert isinstance(result, int)
+        
+        # Verify the group chat was created with round robin fields
+        component_info = await group_chat_model.get_component_by_id(result)
+        assert isinstance(component_info, RoundRobinGroupChatConfig)
+        assert component_info.name == "round-robin-chat"
+        assert component_info.type == GroupChatType.ROUND_ROBIN_GROUP_CHAT
+        assert component_info.description == "Round robin chat test"
+        assert component_info.labels == ["test", "round_robin"]
+        assert component_info.participants == ["agent1", "agent2"]
+        assert component_info.handoff_target == "user"
+        assert component_info.termination_condition == "handoff"
+
+    @pytest.mark.asyncio
+    async def test_update_round_robin_group_chat(self, group_chat_model, sample_agents):
+        """Test updating round robin group chat with new handoff_target and termination_condition"""
+        # Create a round robin group chat
+        gc_id = await group_chat_model.create_group_chat(
+            name="update-round-robin",
+            type="round_robin_group_chat",
+            description="Original description",
+            participants=["agent1"],
+            handoff_target="user",
+            termination_condition="handoff",
+            created_by=1
+        )
+        
+        # Update it
+        updated_info = RoundRobinGroupChatConfig(
+            type=GroupChatType.ROUND_ROBIN_GROUP_CHAT,
+            name="updated-round-robin",
+            description="Updated description",
+            labels=["updated"],
+            participants=["agent1", "agent2", "agent3"],
+            handoff_target="agent1",
+            termination_condition="text_mention"
+        )
+        
+        result = await group_chat_model.update_component_by_id(gc_id, updated_info)
+        
+        assert isinstance(result, RoundRobinGroupChatConfig)
+        assert result.name == "updated-round-robin"
+        assert result.description == "Updated description"
+        assert result.labels == ["updated"]
+        assert result.participants == ["agent1", "agent2", "agent3"]
+        assert result.handoff_target == "agent1"
+        assert result.termination_condition == "text_mention"
+
+    @pytest.mark.asyncio
+    async def test_to_component_info_round_robin_group_chat(self, group_chat_model, sample_round_robin_group_chat):
+        """Test to_component_info for round robin group chat"""
+        component_info = await group_chat_model.to_component_info(sample_round_robin_group_chat)
+        
+        assert isinstance(component_info, RoundRobinGroupChatConfig)
+        assert component_info.name == "test-round-robin-chat"
+        assert component_info.description == "A test round robin group chat"
+        assert component_info.type == GroupChatType.ROUND_ROBIN_GROUP_CHAT
+        assert component_info.participants == ["agent1", "agent2"]
+        assert component_info.handoff_target == "user"  # Default value
+        assert component_info.termination_condition == "handoff"  # Default value
+        assert component_info.labels == ["test", "round_robin"]
 
 
 if __name__ == "__main__":

@@ -7,26 +7,53 @@ component info maps, and messages for each user session.
 
 import asyncio
 from contextlib import asynccontextmanager
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Callable, Awaitable, Union
 from dataclasses import dataclass, field
 import chainlit as cl
 from schemas.model_info import ModelClientConfig
-from schemas.component import ComponentInfo
+from schemas.config_type import ComponentInfo
+from schemas.agent import AssistantAgentConfig, UserProxyAgentConfig, AgentType
 from schemas.types import ComponentType
-from schemas.agent import AgentType
-from schemas.group_chat import GroupChatType
+from schemas.group_chat import GroupChatType as GroupChatTypeEnum
+from schemas.config_type import AgentConfigType
 from autogen_agentchat.teams import BaseGroupChat
 from chainlit_web.ui_hook.ui_select_group_chat import UIGroupChatBuilder
+from chainlit_web.ui_hook.autogen_chat_queue import AutoGenAgentChatQueue
 from autogen_core import CancellationToken
 from chainlit.user_session import UserSession
 from chainlit.context import context
+from autogen_agentchat.base._task import TaskRunner
 from autogen_agentchat.ui import Console
 from data_layer.data_layer import AgentFusionDataLayer
 from data_layer.models.llm_model import LLMModel
 from builders.agent_builder import AgentBuilder
 from chainlit.types import ChatProfile
+from base.goupchat_queue import BaseChatQueue
+from autogen_core import CancellationToken
+from logging import getLogger
+
+logger = getLogger("chainlit_web")
 
 MODEL_WIDGET_ID = "Model"  # 常量定义
+
+# Type aliases following project guidelines
+ComponentConfigTypes = Union[ComponentInfo, AgentConfigType]
+InputFuncType = Optional[Callable[[str], Awaitable[str]]]
+
+class UIAgentBuilder:
+    """Builder for single agent mode with queue interface"""
+    
+    def __init__(self, data_layer: AgentFusionDataLayer, input_func: InputFuncType = None):
+        self.data_layer = data_layer
+        self.input_func = input_func
+        
+    @asynccontextmanager
+    async def build_with_queue(self, agent_info: AgentConfigType):
+        """Build an agent and wrap it in AutoGenAgentChatQueue"""
+        agent_builder = AgentBuilder(input_func=self.input_func)
+        async with agent_builder.build(agent_info) as agent:
+            queue = AutoGenAgentChatQueue(agent)
+            yield queue
 
 # @dataclass
 # class ChatProfile(cl.ChatProfile):
@@ -37,12 +64,11 @@ class UserSessionData:
     """Data container for user session information"""
     chat_profile : Optional[List[ChatProfile]] = None
     component_info_map: Dict[str, ComponentInfo] = field(default_factory=dict)
+    cancellation_token: CancellationToken | None = None
     current_component_name: Optional[str] = None
-    current_component: Optional[Any] = None
+    current_component_queue: Optional[BaseChatQueue] = None
     current_component_context: Optional[Any] = None
     current_model_client: Optional[ModelClientConfig] = None
-    message_queue: Optional[asyncio.Queue] = None
-    close_event: Optional[asyncio.Event] = None
     settings: Dict[str, Any] = field(default_factory=dict)
     ready: bool = False
     messages: List[Dict[str, Any]] = field(default_factory=list)
@@ -67,6 +93,7 @@ class UserSessionManager:
             # 将group_chats列表转换为字典
             group_chats_dict = {gc.name: gc for gc in group_chats}
             
+            # Include both agents and group chats in component map for single agent and group chat modes
             self.component_info_map = {**agents_dict, **group_chats_dict}
         except Exception as e:
             print(f"Error initializing component_info_map: {e}")
@@ -150,42 +177,32 @@ class User(UserSessionData, UserSession):
         self.chat_profile = self.set("chat_profile", None)
         # component_info_map现在从SessionManager中获取
         self.current_component_name = self.set("current_component_name", "default")
-        self.current_component = self.set("current_component", None)
+        self.current_component_queue = self.set("current_component", None)
         self.current_component_context = self.set("current_component_context", None)
         self.current_model_client = self.set("current_model_client", None)
-        self.message_queue = self.set("message_queue", None)
-        self.close_event = self.set("close_event", None)
         self.settings = self.set("settings", {})
         self.ready = self.set("ready", False)
     
-    def create_message_queue(self) -> asyncio.Queue:
-        """Create and set a new message queue"""
-        self.message_queue = asyncio.Queue()
-        self.close_event = asyncio.Event()
-        return self.message_queue
-    
-    def signal_close(self) -> None:
+    def on_stop(self) -> None:
         """Signal close event to unblock waiting operations"""
-        if self.close_event:
-            self.close_event.set()
+        if self.cancellation_token:
+            self.cancellation_token.cancel()
     
     def clear_chat_resources(self) -> None:
         """Clear chat-related resources (component, message queue)"""
-        if self.close_event:
-            self.close_event.set()  # Signal close before clearing
-        self.current_component = None
+        self.current_component_queue = None
         self.current_component_context = None
-        self.message_queue = None
-        self.close_event = None
         self.ready = False
     
     async def start_chat(self, data_layer: AgentFusionDataLayer):
         """Initialize and start chat session"""
         try:
-            if self.chat_profile is None:
-                self.chat_profile = self.set("chat_profile", await User.get_chat_profiles(data_layer))
+            chat_profile_name : Optional[str] = self.get("chat_profile")
+            if chat_profile_name is None:
+                chat_profiles = await User.get_chat_profiles(data_layer)
+                chat_profile_name = self.set("chat_profile", chat_profiles[0].name)
 
-            component_name = self.chat_profile[0].name
+            component_name = chat_profile_name
             await cl.Message(
                 content=f"starting chat with {self.identifier} using the {component_name} chat profile"
             ).send()
@@ -196,62 +213,24 @@ class User(UserSessionData, UserSession):
             self.current_component_name = component_name
             
         except Exception as e:
-            print(f"Error in start_chat: {e}")
+            logger.error(f"Error in start_chat: {e}")
             raise
     
     async def input_func(self):
         async def wrap_input(prompt: str, token: CancellationToken) -> str:
-            if not self.ready:
-                self.ready = True
-            
-            # Check if message queue and close event exist
-            if not self.message_queue or not self.close_event:
-                raise RuntimeError("Message queue or close event not initialized")
-            
-            # Create tasks for both message queue and close event
-            message_task = asyncio.create_task(self.message_queue.get())
-            close_task = asyncio.create_task(self.close_event.wait())
-            
-            try:
-                # Wait for either message or close signal (like Unix select)
-                done, _ = await asyncio.wait(
-                    {message_task, close_task}, 
-                    return_when=asyncio.FIRST_COMPLETED
-                )
-                
-                # Cancel pending tasks
-                # for task in pending:
-                #     task.cancel()
-                #     try:
-                #         await task
-                #     except asyncio.CancelledError:
-                #         pass
-                
-                # Check which task completed
-                for task in done:
-                    if task == close_task:
-                        # Close signal received
-                        token.cancel()
-                        raise asyncio.CancelledError("Chat session closed")
-                    elif task == message_task:
-                        # Message received
-                        return task.result()
-                        
-            except asyncio.CancelledError:
-                # Clean up tasks if cancelled
-                message_task.cancel()
-                close_task.cancel()
-                raise
+            pass
                 
         return wrap_input
 
-    async def component_create(self, component_info: ComponentInfo, data_layer: AgentFusionDataLayer):
+    async def component_create(self, component_info: ComponentConfigTypes, data_layer: AgentFusionDataLayer):
         wrap_input = self.input_func()
         factory_map = {
-            AgentType.ASSISTANT_AGENT: AgentBuilder(input_func=wrap_input).build,
-            AgentType.USER_PROXY_AGENT: AgentBuilder(input_func=wrap_input).build,
-            GroupChatType.SELECTOR_GROUP_CHAT:UIGroupChatBuilder(data_layer=data_layer,input_func=wrap_input).build,
-            GroupChatType.ROUND_ROBIN_GROUP_CHAT:UIGroupChatBuilder(data_layer=data_layer,input_func=wrap_input).build,
+            # Single agent modes - wrapped in queue interface
+            AgentType.ASSISTANT_AGENT: UIAgentBuilder(data_layer=data_layer, input_func=wrap_input).build_with_queue,
+            AgentType.USER_PROXY_AGENT: UIAgentBuilder(data_layer=data_layer, input_func=wrap_input).build_with_queue,
+            # Group chat modes
+            GroupChatTypeEnum.SELECTOR_GROUP_CHAT: UIGroupChatBuilder(data_layer=data_layer, input_func=wrap_input).build_with_queue,
+            GroupChatTypeEnum.ROUND_ROBIN_GROUP_CHAT: UIGroupChatBuilder(data_layer=data_layer, input_func=wrap_input).build_with_queue,
         }
         async_context = factory_map[component_info.type](component_info)
         return async_context
@@ -259,7 +238,7 @@ class User(UserSessionData, UserSession):
     async def component_cleanup(self, component: Any):
         await component.__aexit__(None, None, None)
     
-    async def setup_new_component(self, component_name: str, component_info_map: Dict[str, ComponentInfo], data_layer: AgentFusionDataLayer):
+    async def setup_new_component(self, component_name: str, component_info_map: Dict[str, ComponentConfigTypes], data_layer: AgentFusionDataLayer):
         """Set up new component (Agent or GroupChat)"""
         try:
             component_info = component_info_map.get(component_name)
@@ -270,32 +249,30 @@ class User(UserSessionData, UserSession):
             )
 
             self.current_component_context = async_context
-            component = await async_context.__aenter__()
-            self.current_component = component
-            asyncio.create_task(Console(component.run_stream()))
-            self.create_message_queue()
-
-            #only for selector group chat
-            if component_info.type == GroupChatType.SELECTOR_GROUP_CHAT:
-                self.ready = False            
-                # Wait for ready
-                while not self.ready:
-                    await asyncio.sleep(0.1)
+            component_queue : BaseChatQueue = await async_context.__aenter__()
+            self.cancellation_token = self.set("cancellation_token", CancellationToken())
+            await component_queue.start(cancellation_token=self.cancellation_token)
+            self.current_component_queue = component_queue
                 
         except Exception as e:
-            print(f"Error in setup_new_component: {e}")
+            logger.error(f"Error in setup_new_component: {e}")
             raise
     
     async def chat(self, message: cl.Message):
         """Handle incoming chat message"""
         try:
-            if self.message_queue and not self.close_event.is_set():
-                self.message_queue.put_nowait(message.content)
+            component_queue : BaseChatQueue = self.current_component_queue
+            if component_queue:
+                # Process the message through the queue and handle responses
+                async for event in component_queue.push(message.content):
+                    # Handle different types of events
+                    if hasattr(event, 'content'):
+                        await cl.Message(content=str(event.content)).send()
             else:
-                print("Message queue not available or session closed")
+                logger.error("Component queue not available")
                 
         except Exception as e:
-            print(f"Error in chat: {e}")
+            logger.error(f"Error in chat: {e}")
     
     async def cleanup_current_chat(self):
         """Clean up current chat resources"""
@@ -308,7 +285,7 @@ class User(UserSessionData, UserSession):
             self.clear_chat_resources()
             
         except Exception as e:
-            print(f"Error in cleanup_current_chat: {e}")
+            logger.error(f"Error in cleanup_current_chat: {e}")
 
     async def settings_update(self, settings: cl.ChatSettings, data_layer_instance: AgentFusionDataLayer):
         """处理设置更新，主要处理模型选择"""
@@ -324,7 +301,7 @@ class User(UserSessionData, UserSession):
             self.settings.update(settings)
             
         except Exception as e:
-            print(f"Error in settings_update: {e}")
+            logger.error(f"Error in settings_update: {e}")
             await cl.Message(
                 content=f"设置更新失败: {str(e)}",
                 author="System"
@@ -361,7 +338,7 @@ class User(UserSessionData, UserSession):
             if not profiles:
                 profiles = [
                     ChatProfile(
-                        name="hil",
+                        name="executor",
                         markdown_description="**Default Group Chat**: Human-in-the-loop conversation",
                         icon="https://picsum.photos/200",
                     ),
@@ -370,7 +347,7 @@ class User(UserSessionData, UserSession):
             return profiles
             
         except Exception as e:
-            print(f"Error loading chat profiles: {e}")
+            logger.error(f"Error loading chat profiles: {e}")
             # 发生错误时返回默认配置
             return [
                 ChatProfile(

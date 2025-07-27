@@ -1,4 +1,5 @@
-from schemas.component import ComponentInfo, GroupChatType, TypedSelectorGroupChat, TypedRoundRobinGroupChat
+from schemas.config_type import ComponentInfo
+from schemas.group_chat_type import GroupChatType, TypedSelectorGroupChat, TypedRoundRobinGroupChat
 from schemas.group_chat import GroupChatType as GroupChatTypeEnum, GroupChatConfig
 from autogen_agentchat.teams import BaseGroupChat,SelectorGroupChat, RoundRobinGroupChat
 from builders.model_builder import ModelClientBuilder
@@ -16,6 +17,13 @@ from builders.prompt_builder import PromptBuilder
 from schemas.types import ComponentType
 from autogen_agentchat.conditions import HandoffTermination, TextMentionTermination
 from autogen_agentchat.base import Handoff
+from autogen_agentchat.base._task import TaskResult
+from autogen_agentchat.messages import BaseAgentEvent, BaseChatMessage
+from autogen_agentchat.base import TaskResult
+from autogen_core import AgentRuntime
+from autogen_agentchat.teams._group_chat._events import GroupChatTermination
+from abc import ABC, abstractmethod
+from base.goupchat_queue import BaseChatQueue
 
 class GroupChatBuilder:
     def __init__(
@@ -32,6 +40,9 @@ class GroupChatBuilder:
 
     def prompt_builder(self) -> PromptBuilder:
         return PromptBuilder()
+    
+    def group_chat_queue_builder(self, group_chat_instance: GroupChatType) -> BaseChatQueue:
+        pass
 
     def _group_chat_map(self, GroupChatTypeEnum: GroupChatTypeEnum) -> Type[GroupChatType]:
         return {
@@ -71,6 +82,11 @@ class GroupChatBuilder:
             else:
                 raise ValueError(f"Invalid group chat type: {group_chat_info.type}")
         return _factory
+
+    @asynccontextmanager
+    async def build_with_queue(self, group_chat_info: GroupChatConfig) -> AsyncGenerator[BaseChatQueue, None]:
+        async with self.build(group_chat_info) as group_chat:
+            yield self.group_chat_queue_builder(group_chat)
 
     @asynccontextmanager
     async def build(self, group_chat_info: GroupChatConfig) -> AsyncGenerator[BaseGroupChat, None]:

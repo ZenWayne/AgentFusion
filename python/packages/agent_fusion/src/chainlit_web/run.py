@@ -83,7 +83,7 @@ async def start_chat() -> None:
 @cl.on_stop
 async def on_stop() -> None:
     current_user = User()
-    await current_user.signal_close()
+    await current_user.on_stop()
 
 @cl.on_message  # type: ignore
 async def chat(message: cl.Message) -> None:

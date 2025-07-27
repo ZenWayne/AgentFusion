@@ -9,7 +9,7 @@ from .group_chat_table import GroupChatTable
 from .llm_table import ModelClientTable
 from .mcp_tables import McpServerTable
 from .prompt_table import PromptTable, PromptVersionTable
-from .relationship_table import AgentMcpServerTable
+from .relationship_table import AgentMcpServerTable, GroupChatParticipantsTable
 from .step_table import StepsTable
 from .thread_table import ThreadTable
 from .user_table import UserTable
@@ -30,6 +30,7 @@ __all__ = [
     "PromptTable",
     "PromptVersionTable",
     "AgentMcpServerTable",
+    "GroupChatParticipantsTable",
     "StepsTable",
     "ThreadTable",
     "UserTable",

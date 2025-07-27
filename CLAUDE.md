@@ -86,7 +86,43 @@ python/packages/agent_fusion/src/
 3. **Error Handling**: Always rollback on exceptions and log errors
 4. **Type Safety**: Use proper type hints and dataclasses
 
+### Type Hint Guidelines
+**MANDATORY REQUIREMENT**: All code must include proper type hints following these rules:
+1. **Generic Types for Flexibility**: Use generic/union types instead of specific concrete types
+   - ✅ GOOD: `GroupChatType` (covers all group chat types)
+   - ❌ BAD: `TypedRoundRobinGroupChat` (too specific)
+2. **Universal Component Types**: When dealing with components that could be agents or group chats:
+   - ✅ GOOD: `ComponentInfo | AgentConfig | GroupChatConfig`
+   - ❌ BAD: `AssistantAgent` (excludes other types)
+3. **Function Signatures**: All functions must have complete type hints for parameters and return values
+4. **Generic Type Variables**: Use `TypeVar` and `Generic` for reusable code:
+   ```python
+   T = TypeVar('T', bound=BaseGroupChat)
+   class AutoGenGroupChatQueue(BaseChatQueue, Generic[T]):
+   ```
+5. **Union Types**: Use `|` syntax for union types in Python 3.10+:
+   ```python
+   def process_component(component: AgentType | GroupChatType) -> ComponentInfo | None:
+   ```
+
 ## Recent Major Changes
+
+### 2025-07-26: Single Agent Mode Implementation
+- **AutoGenAgentChatQueue**: New queue-based wrapper for single agents supporting run_stream integration
+- **UIAgentBuilder**: Builder class for single agent mode following same patterns as group chat builders
+- **Enhanced User Session Management**: Updated to support both agents and group chats in component map
+- **Comprehensive Testing**: 13 test cases covering core functionality, error handling, and integration scenarios
+- **Type Safety Improvements**: Applied new type hint guidelines with generic/union types instead of specific concrete types
+
+### 2025-07-26: Type Hint Guidelines Addition & Module Refactoring
+- **MANDATORY REQUIREMENT**: All code must include proper type hints following project guidelines
+- **Generic Types**: Use `GroupChatType` instead of `TypedRoundRobinGroupChat` for flexibility
+- **Union Types**: Use `ComponentInfo | AgentConfig | GroupChatConfig` for universal component handling
+- **Type Aliases**: Created `AgentConfigTypes`, `ComponentConfigTypes`, and `InputFuncType` for consistency
+- **Module Separation**: Created `schemas/typed_components.py` to separate typed wrapper classes following CR feedback
+  - Moved `TypedSelectorGroupChat`, `TypedRoundRobinGroupChat` from `component.py`
+  - Moved `GroupChatType`, `AgentType` union types to dedicated module
+  - Updated all import references across codebase
 
 ### 2025-07-24: Database Schema Alignment
 - Fixed field type mismatches between SQL schema and SQLAlchemy models
@@ -107,6 +143,13 @@ python/packages/agent_fusion/src/
 - Fixed failed login attempt tracking and account locking
 
 ## Testing Guidelines
+
+### **MANDATORY REQUIREMENT**
+**Every new data module interface MUST include comprehensive test code**
+- All CRUD operations must be tested
+- All edge cases and error conditions must be covered
+- Both successful and failure scenarios must be tested
+- Test coverage should be comprehensive for all public methods
 
 ### Test Structure
 - **File**: `tests/test_user_model.py` (54 tests, all passing)
@@ -173,10 +216,16 @@ These tables exist in SQL schema but lack SQLAlchemy models:
 ## Development Workflow
 
 1. **Before Making Changes**: Always read this CLAUDE.md file
-2. **Database Changes**: Update both SQL schema AND SQLAlchemy models
-3. **Testing**: Run tests after any data layer changes
-4. **Activity Logging**: Log significant user actions for audit trail
-5. **Error Handling**: Always use proper session management with rollback
+2. **Coordinated Schema Changes**: When modifying SQL schema or models, ALL related components MUST be updated together in this order:
+   - SQL schema (`sql/progresdb.sql`)
+   - SQLAlchemy ORM table models (`data_layer/models/tables/`)
+   - Pydantic ComponentInfo schemas (`schemas/`)
+   - Model methods that use the changed fields
+   - Test cases for all changes
+3. **Database Changes**: Update both SQL schema AND SQLAlchemy models
+4. **Testing**: Run tests after any data layer changes AND write new tests for new interfaces
+5. **Activity Logging**: Log significant user actions for audit trail
+6. **Error Handling**: Always use proper session management with rollback
 
 ## Contact and Context
 
@@ -192,6 +241,8 @@ When working on this project, prioritize:
 3. Proper error handling and logging
 4. Type safety and ORM usage over raw SQL
 5. Security best practices (especially for authentication)
+6. **Mandatory test coverage**: Every new data module interface MUST include comprehensive test code
+7. **Coordinated schema changes**: When modifying SQL schema or models, ALL related components must be updated together (SQL → ORM tables → ComponentInfo schemas → model methods → tests)
 
 ---
 *Last Updated: 2025-07-24*

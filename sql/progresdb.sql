@@ -15,6 +15,8 @@ DROP TABLE IF EXISTS password_reset_tokens CASCADE;
 DROP TABLE IF EXISTS prompt_change_history CASCADE;
 DROP TABLE IF EXISTS prompt_versions CASCADE;
 DROP TABLE IF EXISTS prompts CASCADE;
+DROP TABLE IF EXISTS group_chat_participants CASCADE;
+DROP TABLE IF EXISTS group_chats CASCADE;
 DROP TABLE IF EXISTS agent_mcp_servers CASCADE;
 DROP TABLE IF EXISTS mcp_servers CASCADE;
 DROP TABLE IF EXISTS agents CASCADE;
@@ -55,7 +57,6 @@ CREATE TABLE "User" (
     locked_until TIMESTAMP,
     email_verified_at TIMESTAMP,
     phone VARCHAR(20),
-    --CR 检查所有表的metadata字段和代码中的一一对应，并修改这里的字段符合代码中的
     user_metadata JSONB DEFAULT '{}', -- Store additional user preferences, settings, etc.
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -270,7 +271,8 @@ CREATE TABLE group_chats (
     description TEXT,
     labels TEXT[] DEFAULT '{}', -- Array of labels
     selector_prompt TEXT, -- For selector group chat
-    participants JSONB DEFAULT '[]', -- Array of participant names
+    handoff_target VARCHAR(255) DEFAULT 'user', -- For round robin group chat
+    termination_condition VARCHAR(255) DEFAULT 'handoff', -- For round robin group chat
     model_client VARCHAR(255), -- Reference to model client label
     component_type_id INTEGER REFERENCES component_types(id),
     version INTEGER DEFAULT 1,
@@ -313,6 +315,19 @@ CREATE TABLE agent_mcp_servers (
     UNIQUE(agent_id, mcp_server_id)
 );
 
+-- Group chat participants relationship table (many-to-many)
+CREATE TABLE group_chat_participants (
+    id SERIAL PRIMARY KEY,
+    group_chat_id INTEGER NOT NULL REFERENCES group_chats(id) ON DELETE CASCADE,
+    agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    participant_role VARCHAR(100) DEFAULT 'participant', -- participant, moderator, observer
+    join_order INTEGER DEFAULT 0, -- Order in which participants join
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by INTEGER REFERENCES "User"(id),
+    UNIQUE(group_chat_id, agent_id)
+);
+
 -- Prompts table (main prompt definitions)
 CREATE TABLE prompts (
     id SERIAL PRIMARY KEY,
@@ -340,6 +355,7 @@ CREATE TABLE prompt_versions (
     version_label VARCHAR(100), -- e.g., 'v1.0', 'v1.1-beta'
     content TEXT NOT NULL, -- The actual prompt text
     content_hash VARCHAR(64), -- SHA256 hash of content for integrity
+    --CR 这个字段改成prompt_metadata，并修改orm table，包括相关联的所有方法
     metadata JSONB DEFAULT '{}', -- Store template variables, parameters, etc.
     status VARCHAR(50) DEFAULT 'draft', -- draft, review, approved, deprecated
     created_by INTEGER REFERENCES "User"(id),
@@ -460,6 +476,17 @@ CREATE INDEX idx_agents_label ON agents(label);
 CREATE INDEX idx_agents_active ON agents(is_active);
 CREATE INDEX idx_agents_model_client ON agents(model_client_id);
 
+-- Group chats indexes
+CREATE INDEX idx_group_chats_group_chat_uuid ON group_chats(group_chat_uuid);
+CREATE INDEX idx_group_chats_name ON group_chats(name);
+CREATE INDEX idx_group_chats_type ON group_chats(type);
+CREATE INDEX idx_group_chats_active ON group_chats(is_active);
+
+-- Group chat participants indexes
+CREATE INDEX idx_group_chat_participants_group_chat_id ON group_chat_participants(group_chat_id);
+CREATE INDEX idx_group_chat_participants_agent_id ON group_chat_participants(agent_id);
+CREATE INDEX idx_group_chat_participants_active ON group_chat_participants(is_active);
+
 -- MCP servers indexes
 CREATE INDEX idx_mcp_servers_server_uuid ON mcp_servers(server_uuid);
 CREATE INDEX idx_mcp_servers_name ON mcp_servers(name);
@@ -513,6 +540,7 @@ CREATE TRIGGER update_steps_updated_at BEFORE UPDATE ON steps FOR EACH ROW EXECU
 CREATE TRIGGER update_elements_updated_at BEFORE UPDATE ON elements FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_feedbacks_updated_at BEFORE UPDATE ON feedbacks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_agents_updated_at BEFORE UPDATE ON agents FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_group_chats_updated_at BEFORE UPDATE ON group_chats FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_prompts_updated_at BEFORE UPDATE ON prompts FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_model_clients_updated_at BEFORE UPDATE ON model_clients FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_mcp_servers_updated_at BEFORE UPDATE ON mcp_servers FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -702,20 +730,38 @@ INSERT INTO agent_mcp_servers (agent_id, mcp_server_id, created_by) VALUES
     (2, 2, 1), -- executor uses file_system_unix
     (2, 3, 1); -- executor uses file_system
 
+-- Insert sample group chats based on config.json
+INSERT INTO group_chats (name, type, description, labels, selector_prompt, model_client, created_by) VALUES 
+    ('file_system', 'round_robin_group_chat', '文件系统操作代理，负责处理文件和目录相关的操作', 
+     '{"file_system", "agent"}', NULL, NULL, 1),
+    ('prompt_flow', 'selector_group_chat', 'Prompt迭代器', 
+     '{"prompt", "group_chat"}', 'group_chat/prompt_flow/selector_pt.md', 
+     'deepseek-chat_DeepSeek', 1),
+    ('hil', 'selector_group_chat', 'hil', 
+     '{"group_chat", "hil"}', 'hil/hil_selector_pt.md', 
+     'deepseek-chat_DeepSeek', 1);
+
+-- Insert sample group chat participants
+INSERT INTO group_chat_participants (group_chat_id, agent_id, participant_role, join_order, created_by) VALUES 
+    (1, 1, 'participant', 1, 1), -- file_system group: prompt_refiner
+    (2, 1, 'participant', 1, 1), -- prompt_flow group: prompt_refiner  
+    (2, 2, 'participant', 2, 1), -- prompt_flow group: executor
+    (3, 1, 'participant', 1, 1); -- hil group: prompt_refiner (assuming product_manager maps to agent id 1)
+
 -- Insert sample prompts
-INSERT INTO prompts (prompt_id, name, category, subcategory, description, agent_id, created_by) VALUES 
-    ('prd_pt_v1', 'Product Requirements Document Template', 'agent', 'prd_pt', 'Universal PRD framework generator', 1, 1),
-    ('ui_designer_pt_v1', 'UI Designer Prompt Template', 'agent', 'ui_designer_pt', 'UI design assistant prompt', 2, 1),
-    ('prompt_refiner_system', 'Prompt Refiner System Message', 'agent', 'system_message', 'System message for prompt refiner agent', 1, 1);
+INSERT INTO prompts (prompt_id, name, category, subcategories, description, agent_id, created_by) VALUES 
+    ('prd_pt_v1', 'Product Requirements Document Template', 'agent', ARRAY['prd_pt'], 'Universal PRD framework generator', 1, 1),
+    ('ui_designer_pt_v1', 'UI Designer Prompt Template', 'agent', ARRAY['ui_designer_pt'], 'UI design assistant prompt', 2, 1),
+    ('prompt_refiner_system', 'Prompt Refiner System Message', 'agent', ARRAY['system_message'], 'System message for prompt refiner agent', 1, 1);
 
 -- Insert sample threads
-INSERT INTO threads (id, name, user_id, user_identifier, tags, metadata) VALUES 
+INSERT INTO threads (id, name, user_id, user_identifier, tags, thread_metadata) VALUES 
     ('550e8400-e29b-41d4-a716-446655440001', 'Welcome Chat Session', 2, 'admin', ARRAY['welcome', 'tutorial'], '{}'),
     ('550e8400-e29b-41d4-a716-446655440002', 'Agent Development Discussion', 3, 'developer', ARRAY['development', 'agent'], '{}'),
     ('550e8400-e29b-41d4-a716-446655440003', 'Prompt Review Session', 4, 'reviewer', ARRAY['review', 'prompts'], '{}');
 
 -- Insert sample steps
-INSERT INTO steps (id, name, type, thread_id, streaming, input, output, metadata) VALUES 
+INSERT INTO steps (id, name, type, thread_id, streaming, input, output, step_metadata) VALUES 
     ('650e8400-e29b-41d4-a716-446655440001', 'Welcome Message', 'system', '550e8400-e29b-41d4-a716-446655440001', FALSE, NULL, 'Welcome to AgentFusion! How can I help you today?', '{}'),
     ('650e8400-e29b-41d4-a716-446655440002', 'User Question', 'user', '550e8400-e29b-41d4-a716-446655440001', FALSE, 'How do I create a new agent?', NULL, '{}'),
     ('650e8400-e29b-41d4-a716-446655440003', 'Agent Response', 'assistant', '550e8400-e29b-41d4-a716-446655440001', FALSE, NULL, 'To create a new agent, you can use the agent builder interface...', '{}'),
@@ -806,7 +852,7 @@ SELECT
     AVG(f.value) as avg_feedback,
     MAX(s.created_at) as last_activity,
     t.tags,
-    t.metadata,
+    t.thread_metadata,
     t.created_at,
     t.is_active
 FROM threads t
@@ -815,7 +861,7 @@ LEFT JOIN steps s ON t.id = s.thread_id
 LEFT JOIN elements e ON t.id = e.thread_id
 LEFT JOIN feedbacks f ON t.id = f.thread_id
 WHERE t.is_active = TRUE
-GROUP BY t.id, t.name, u.username, u.first_name, u.last_name, t.tags, t.metadata, t.created_at, t.is_active
+GROUP BY t.id, t.name, u.username, u.first_name, u.last_name, t.tags, t.thread_metadata, t.created_at, t.is_active
 ORDER BY last_activity DESC;
 
 -- View for conversation flow
@@ -890,7 +936,7 @@ SELECT
     p.prompt_id,
     p.name,
     p.category,
-    p.subcategory,
+    p.subcategories,
     pv.version_number,
     pv.version_label,
     pv.content,
@@ -934,7 +980,7 @@ SELECT
     p.prompt_id,
     p.name as prompt_name,
     p.category,
-    p.subcategory,
+    p.subcategories,
     pv.version_number,
     pv.status,
     pv.is_current,
@@ -950,6 +996,41 @@ LEFT JOIN "User" ua ON a.created_by = ua.id
 LEFT JOIN "User" upv ON pv.created_by = upv.id
 LEFT JOIN "User" umc ON mc.created_by = umc.id
 WHERE a.is_active = TRUE AND (p.is_active = TRUE OR p.id IS NULL);
+
+-- View for agent MCP servers mapping
+CREATE VIEW agent_mcp_servers_view AS
+SELECT 
+    a.id as agent_id,
+    a.agent_uuid,
+    a.name as agent_name,
+    a.label as agent_label,
+    a.description as agent_description,
+    ms.id as mcp_server_id,
+    ms.server_uuid as mcp_server_uuid,
+    ms.name as mcp_server_name,
+    ms.command as mcp_command,
+    ms.args as mcp_args,
+    ms.env as mcp_env,
+    ms.url as mcp_url,
+    ms.headers as mcp_headers,
+    ms.timeout as mcp_timeout,
+    ms.sse_read_timeout as mcp_sse_read_timeout,
+    ms.description as mcp_description,
+    ams.is_active as relationship_active,
+    ams.created_at as relationship_created_at,
+    ua.username as agent_created_by,
+    ums.username as mcp_server_created_by,
+    urel.username as relationship_created_by
+FROM agents a
+LEFT JOIN agent_mcp_servers ams ON a.id = ams.agent_id
+LEFT JOIN mcp_servers ms ON ams.mcp_server_id = ms.id
+LEFT JOIN "User" ua ON a.created_by = ua.id
+LEFT JOIN "User" ums ON ms.created_by = ums.id
+LEFT JOIN "User" urel ON ams.created_by = urel.id
+WHERE a.is_active = TRUE 
+    AND (ms.is_active = TRUE OR ms.id IS NULL)
+    AND (ams.is_active = TRUE OR ams.id IS NULL)
+ORDER BY a.name, ms.name;
 
 -- ================================================
 -- User Management Functions
@@ -1232,9 +1313,9 @@ $$ LANGUAGE plpgsql;
 -- Function to add an element/attachment
 CREATE OR REPLACE FUNCTION add_element(
     p_thread_id UUID,
-    p_step_id UUID DEFAULT NULL,
     p_type TEXT,
     p_name TEXT,
+    p_step_id UUID DEFAULT NULL,
     p_url TEXT DEFAULT NULL,
     p_mime_type TEXT DEFAULT NULL,
     p_size_bytes BIGINT DEFAULT NULL,
@@ -1558,7 +1639,7 @@ COMMENT ON COLUMN user_api_keys.ip_whitelist IS 'Array of allowed IP addresses f
 COMMENT ON COLUMN user_activity_logs.action_details IS 'JSON containing detailed action context';
 COMMENT ON COLUMN threads.user_identifier IS 'Legacy compatibility field for Chainlit integration';
 COMMENT ON COLUMN threads.tags IS 'Array of tags for categorizing conversations';
-COMMENT ON COLUMN threads.metadata IS 'JSON metadata for conversation context and settings';
+COMMENT ON COLUMN threads.thread_metadata IS 'JSON metadata for conversation context and settings';
 COMMENT ON COLUMN steps.parent_id IS 'Reference to parent step for threaded conversations';
 COMMENT ON COLUMN steps.streaming IS 'Whether this step involved streaming response';
 COMMENT ON COLUMN steps.generation IS 'JSON metadata about AI generation (tokens, model, etc.)';
