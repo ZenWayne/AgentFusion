@@ -8,11 +8,14 @@ import uuid
 
 from autogen_agentchat.agents import BaseChatAgent
 from autogen_agentchat.base import Response, TaskResult
-from autogen_agentchat.messages import BaseAgentEvent, BaseChatMessage, TextMessage, UserMessage
+from autogen_agentchat.messages import BaseAgentEvent, BaseChatMessage, TextMessage, UserMessage, AssistantMessage, ToolCallRequestEvent
 from autogen_agentchat.messages import ModelClientStreamingChunkEvent
 from autogen_core import CancellationToken
-from autogen_core.models import CreateResult, ChatCompletionClient, LLMMessage, SystemMessage
+from autogen_core.tools import Workbench
+from autogen_core.models import CreateResult, ChatCompletionClient, LLMMessage, SystemMessage, Tool, ToolSchema
+from autogen_core import FunctionCall
 from autogen_core.model_context import ChatCompletionContext, UnboundedChatCompletionContext
+from autogen_agentchat.utils import remove_images
 
 from ..base.goupchat_queue import BaseChatQueue
 
@@ -24,17 +27,25 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         name: str, 
         model_client: ChatCompletionClient,
         model_context: ChatCompletionContext | None = None,
-        system_message: str = "You are a helpful code execution assistant. You can execute Python code wrapped in <code> tags and provide results."
+        workbench: Sequence[Workbench] | None = None,
+        system_message: str = "You are a helpful code execution assistant. You can execute Python code wrapped in <code> tags and provide results.",
+        output_content_type: Optional[bool | type[BaseModel]] = None,
+        output_content_type_format: Optional[str] = None,
+        max_tool_iterations: int = 1,
     ):
         BaseChatAgent.__init__(self, name, "A code execution agent that executes Python code and uses LLM for responses.")
         BaseChatQueue.__init__(self)
         self._model_client = model_client
         self._system_message = system_message
-        
+        if workbench:
+            assert isinstance(workbench, list), "workbench must be a list of Workbench"
+        self._workbench = workbench
         if not model_context:
             model_context = UnboundedChatCompletionContext([SystemMessage(content=self._system_message, source="system")])
         self._model_context: ChatCompletionContext = model_context
-        
+        self._output_content_type = output_content_type
+        self._output_content_type_format = output_content_type_format
+        self._max_tool_iterations = max_tool_iterations
         self._is_running = False
 
     @property
@@ -131,9 +142,117 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         for message in messages:
             await self._model_context.add_message(message)
         
-        # Call LLM and monitor for code blocks in streaming output
-        async for chunk in self._call_llm_with_code_monitoring(cancellation_token, message_id):
-            yield chunk
+        # Call LLM
+        llm_messages = self._get_compatible_context(self._model_client, self._model_context)
+
+        #TODO get tools based on context
+        tools = [tool for wb in self._workbench for tool in await wb.list_tools()]
+        for loop_iteration in range(self._max_tool_iterations):
+            async for create_result_or_stream_event in self._call_llm(message_id, llm_messages, tools, cancellation_token):
+                if isinstance(create_result_or_stream_event, CreateResult):
+                    model_result = create_result_or_stream_event
+                elif isinstance(create_result_or_stream_event, ModelClientStreamingChunkEvent):
+                    yield create_result_or_stream_event
+                else:
+                    pass
+            
+            #when it finally output str it means this is the final response
+            if isinstance(model_result.content, str):
+                return self._output_llm_response(model_result, message_id)
+            
+            assert isinstance(model_result.content, list) and all(
+                isinstance(item, FunctionCall) for item in model_result.content
+            )
+            tool_call_msg = ToolCallRequestEvent(
+                content=model_result.content,
+                source=self.name,
+                models_usage=model_result.usage,
+            )
+            yield tool_call_msg
+
+        assert model_result is not None, "No model result was produced."
+
+        #TODO yield thought event
+        await self._model_context.add_message(
+            AssistantMessage(
+                content=model_result.content,
+                source=self.name,
+                thought=getattr(model_result, "thought", None),
+            )
+        )
+    def _execute_tool_calls(self, function_calls: List[FunctionCall], stream_queue: asyncio.Queue[BaseAgentEvent | BaseChatMessage | None]) -> List[Tuple[FunctionCall, FunctionExecutionResult]]:
+        """Execute tool calls and return results"""
+        async def _execute_tool_calls_task( 
+            function_calls: List[FunctionCall],
+            stream_queue: asyncio.Queue[BaseAgentEvent | BaseChatMessage | None],
+        ) -> List[Tuple[FunctionCall, FunctionExecutionResult]]:
+            results = await asyncio.gather(
+                *[
+                    cls._execute_tool_call(
+                        tool_call=call,
+                        workbench=workbench,
+                        handoff_tools=handoff_tools,
+                        agent_name=agent_name,
+                        cancellation_token=cancellation_token,
+                        stream=stream_queue,
+                    )
+                    for call in function_calls
+                ]
+            )
+            # Signal the end of streaming by putting None in the queue.
+            stream_queue.put_nowait(None)
+            return results
+
+        task = asyncio.create_task(_execute_tool_calls_task(function_calls, stream_queue))
+        return task
+
+    def _output_llm_response(self, model_result: CreateResult, message_id: str) -> Response:
+        if self._output_content_type:
+            content = self._output_content_type.model_validate_json(model_result.content)
+            return Response(
+                chat_message=StructuredMessage[self._output_content_type](  # type: ignore[valid-type]
+                    content=content,
+                    source=self.name,
+                    models_usage=model_result.usage,
+                    full_message_id=message_id
+                )
+            )
+        else:
+            return Response(
+                chat_message=TextMessage(content=model_result.content, source=self.name, full_message_id=message_id)
+            )
+
+    async def _call_llm(
+        self,
+        message_id: str,
+        llm_messages: Sequence[LLMMessage],
+        tools: Sequence[Tool | ToolSchema] = [],
+        cancellation_token: CancellationToken = CancellationToken(),
+    ) -> AsyncGenerator[Union[ModelClientStreamingChunkEvent, CreateResult], None]:
+        """Call LLM and monitor streaming output for code blocks"""
+
+        if self._model_client_stream:
+            async for chunk in self._model_client.create_stream(
+                llm_messages,
+                tools=tools,
+                json_output=self._output_content_type,
+                cancellation_token=cancellation_token,
+            ):
+                if isinstance(chunk, CreateResult):
+                    model_result = chunk
+                elif isinstance(chunk, str):
+                    yield ModelClientStreamingChunkEvent(content=chunk, source=self.name, full_message_id=message_id)
+                else:
+                    raise RuntimeError(f"Invalid chunk type: {type(chunk)}")
+        else:
+            model_result = await self._model_client.create(
+                llm_messages,
+                tools=tools,
+                json_output=self._output_content_type,
+                cancellation_token=cancellation_token,
+            )
+            return model_result
+
 
     async def _call_llm_with_code_monitoring(
         self, 
@@ -222,10 +341,13 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             error_msg = TextMessage(content=f"LLM call failed: {str(e)}", source=self.name)
             yield Response(chat_message=error_msg)
 
-    @staticmethod
-    def _get_compatible_context(model_client: ChatCompletionClient, messages: List[BaseChatMessage]) -> Sequence[BaseChatMessage]:
+    def _get_compatible_context(self, model_client: ChatCompletionClient, model_context: ChatCompletionContext) -> Sequence[LLMMessage]:
         """Get compatible context - simplified without vision handling"""
-        return messages
+        messages = model_context.get_messages()
+        if model_client.model_info["vision"]:
+            return messages
+        else:
+            return remove_images(messages)
 
     def _format_single_execution_result(self, code: str, result: dict) -> str:
         """Format single code execution result"""

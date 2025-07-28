@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Callable, Awaitable
 from autogen_core.memory import ListMemory
 from autogen_agentchat.base import Handoff
+from autogen_ext.tools.mcp import McpWorkbench
 
 class AgentBuilder:
     def __init__(self, input_func: Callable[[str], Awaitable[str]] | None = input):
@@ -29,7 +30,22 @@ class AgentBuilder:
     @asynccontextmanager
     async def build(self, agent_info: AssistantAgentConfig| UserProxyAgentConfig) -> AsyncGenerator[AssistantAgent | UserProxyAgent, None]:
         user_memory = ListMemory()
-        if agent_info.type == AgentType.ASSISTANT_AGENT:
+        if agent_info.type == AgentType.CODE_AGENT:
+            async with AsyncExitStack() as stack:
+                for mcp_server in agent_info.mcp_tools:
+                    for idx, arg in enumerate(mcp_server.args):
+                        mcp_server.args[idx] = parse_cwd_placeholders(arg)
+                workbench = await asyncio.gather(
+                    *[stack.enter_async_context(McpWorkbench(server_params=mcp_server)) 
+                    for mcp_server in agent_info.mcp_tools]
+                )
+                agent = CodeAgent(
+                    name=agent_info.name,
+                    input_func=self._input_func
+                )
+            agent.component_label = agent_info.name
+            yield agent
+        elif agent_info.type == AgentType.ASSISTANT_AGENT:
             model_client_builder: ModelClientBuilder = self.model_client_builder()
             model_client_config = model_client_builder.get_component_by_name(agent_info.model_client)
             async with model_client_builder.build(model_client_config) as model_client:
