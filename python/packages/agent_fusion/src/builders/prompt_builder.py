@@ -1,6 +1,6 @@
 import os
 from os.path import join
-from schemas.component import ComponentType
+from schemas.types import ComponentType
 
 
 class PromptBuilder:

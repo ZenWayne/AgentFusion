@@ -23,7 +23,7 @@ from autogen_agentchat.base import TaskResult
 from autogen_core import AgentRuntime
 from autogen_agentchat.teams._group_chat._events import GroupChatTermination
 from abc import ABC, abstractmethod
-from base.goupchat_queue import BaseChatQueue
+from base.groupchat_queue import BaseChatQueue
 
 class GroupChatBuilder:
     def __init__(

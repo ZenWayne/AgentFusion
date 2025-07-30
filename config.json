@@ -133,6 +133,15 @@
             "prompt_path": "agent/ui_designer_pt.md",
             "model_client": "deepseek-chat_DeepSeek",
             "mcp_tools": []
+        },
+        "assistance_agent": {
+            "name": "assistance_agent",
+            "description": "重构后的assistance_agent",
+            "labels": ["agent", "code_execution", "python", "development"],
+            "type": "code_agent",
+            "prompt_path": "agent/assistance_agent_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": ["file_system"]
         }
     },
     "group_chats": {

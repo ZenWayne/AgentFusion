@@ -34,7 +34,8 @@ def load_info(config_path: str="config.json"):
     
     agent_factory_func = {
         AgentType.ASSISTANT_AGENT: AssistantAgentConfig,
-        AgentType.USER_PROXY_AGENT: UserProxyAgentConfig
+        AgentType.USER_PROXY_AGENT: UserProxyAgentConfig,
+        AgentType.CODE_AGENT: AssistantAgentConfig
     }
     for name, agent_config in metadata["agents"].items():
         if agent_config.get("mcp_tools", None):

@@ -15,7 +15,7 @@ from autogen_agentchat.teams._group_chat._events import (
     SerializableException
 )
 from schemas.group_chat_type import GroupChatType
-from base.goupchat_queue import BaseChatQueue
+from base.groupchat_queue import BaseChatQueue
 
 T = TypeVar('T', bound=BaseGroupChat)
 # Type alias for supported agent types

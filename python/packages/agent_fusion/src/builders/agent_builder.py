@@ -1,6 +1,7 @@
+import asyncio
 from base.utils import get_prompt, parse_cwd_placeholders
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
-from agents.codeagent import CodeExecutionAgent
+from agents.codeagent import CodeAgent
 from schemas.component import ComponentInfo
 from schemas.agent import AssistantAgentConfig, UserProxyAgentConfig, AgentType, InputFuncType
 from builders.model_builder import ModelClientBuilder
@@ -13,10 +14,15 @@ from typing import AsyncGenerator, Callable, Awaitable
 from autogen_core.memory import ListMemory
 from autogen_agentchat.base import Handoff
 from autogen_ext.tools.mcp import McpWorkbench
+from autogen_core.model_context import ChatCompletionContext
+from contextlib import AsyncExitStack
+from agents.handoff import HandoffWithType, mcp_server_tools_with_type
+from autogen_core.tools import StaticStreamWorkbench
 
 class AgentBuilder:
-    def __init__(self, input_func: Callable[[str], Awaitable[str]] | None = input):
+    def __init__(self, input_func: Callable[[str], Awaitable[str]] | None = input, context: ChatCompletionContext | None = None):
         self._input_func: Callable[[str], Awaitable[str]] | None = input_func
+        self._context: ChatCompletionContext | None = context
     
     def model_client_builder(self) -> ModelClientBuilder:
         return ModelClientBuilder()
@@ -35,16 +41,30 @@ class AgentBuilder:
                 for mcp_server in agent_info.mcp_tools:
                     for idx, arg in enumerate(mcp_server.args):
                         mcp_server.args[idx] = parse_cwd_placeholders(arg)
-                workbench = await asyncio.gather(
-                    *[stack.enter_async_context(McpWorkbench(server_params=mcp_server)) 
+                tools = await asyncio.gather(
+                    *[mcp_server_tools_with_type(mcp_server) 
                     for mcp_server in agent_info.mcp_tools]
                 )
-                agent = CodeAgent(
-                    name=agent_info.name,
-                    input_func=self._input_func
-                )
-            agent.component_label = agent_info.name
-            yield agent
+                # Flatten the list of lists
+                tools = [tool for sublist in tools for tool in sublist]
+                if agent_info.user_handoff is not None:
+                    tools += [HandoffWithType(target=agent_info.user_handoff.target, message=agent_info.user_handoff.message)]
+                model_client_builder: ModelClientBuilder = self.model_client_builder()
+                model_client_config = model_client_builder.get_component_by_name(agent_info.model_client)
+                async with model_client_builder.build(model_client_config) as model_client:
+                    #TODO add the hard coded fields to config 
+                    agent = CodeAgent(
+                        name=agent_info.name,
+                        workbench=[StaticStreamWorkbench(tools=tools)],
+                        model_client=model_client,
+                        model_context=self._context,
+                        system_message=agent_info.prompt(),
+                        output_content_type=None,
+                        output_content_type_format=None,
+                        max_tool_iterations=10,
+                    )
+                    agent.component_label = agent_info.name
+                    yield agent
         elif agent_info.type == AgentType.ASSISTANT_AGENT:
             model_client_builder: ModelClientBuilder = self.model_client_builder()
             model_client_config = model_client_builder.get_component_by_name(agent_info.model_client)
@@ -70,7 +90,7 @@ class AgentBuilder:
                     description=agent_info.description,
                     memory=[user_memory],
                     #TODO: read handoff from agent_info and add example in config.json(based on file_system agent)
-                    handoffs=[Handoff(target="user", message="Transfer to user.")],
+                    handoffs=[HandoffWithType(target="user", message="Transfer to user.")],
                     max_tool_iterations=10
                 )
                 agent.component_label = agent_info.name
@@ -84,7 +104,7 @@ class AgentBuilder:
             agent.component_label = agent_info.name
             yield agent
         elif agent_info.type == AgentType.CODE_AGENT:
-            agent = CodeExecutionAgent(
+            agent = CodeAgent(
                 name=agent_info.name,
                 input_func=self._input_func
             )

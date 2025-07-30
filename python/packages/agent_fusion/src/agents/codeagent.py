@@ -1,4 +1,4 @@
-from typing import AsyncGenerator, List, Sequence, Optional, Union
+from typing import AsyncGenerator, List, Sequence, Optional, Union, Tuple
 import subprocess
 import tempfile
 import os
@@ -8,16 +8,34 @@ import uuid
 
 from autogen_agentchat.agents import BaseChatAgent
 from autogen_agentchat.base import Response, TaskResult
-from autogen_agentchat.messages import BaseAgentEvent, BaseChatMessage, TextMessage, UserMessage, AssistantMessage, ToolCallRequestEvent
-from autogen_agentchat.messages import ModelClientStreamingChunkEvent
+from autogen_agentchat.messages import BaseAgentEvent, BaseChatMessage, TextMessage, ToolCallRequestEvent, ToolCallExecutionEvent, HandoffMessage, StructuredMessage
+from autogen_core.models import (
+    AssistantMessage,
+    ChatCompletionClient,
+    CreateResult,
+    FunctionExecutionResult,
+    FunctionExecutionResultMessage
+)
+from autogen_agentchat.messages import ModelClientStreamingChunkEvent, ThoughtEvent
 from autogen_core import CancellationToken
-from autogen_core.tools import Workbench
-from autogen_core.models import CreateResult, ChatCompletionClient, LLMMessage, SystemMessage, Tool, ToolSchema
+from autogen_core.tools import Workbench, Tool, ToolSchema
+from autogen_core.models import CreateResult, ChatCompletionClient, LLMMessage, SystemMessage
 from autogen_core import FunctionCall
 from autogen_core.model_context import ChatCompletionContext, UnboundedChatCompletionContext
 from autogen_agentchat.utils import remove_images
+from pydantic import BaseModel
 
-from ..base.goupchat_queue import BaseChatQueue
+from base.groupchat_queue import BaseChatQueue
+from autogen_agentchat import EVENT_LOGGER_NAME, TRACE_LOGGER_NAME
+import logging
+import json
+from typing import Any
+import warnings
+from autogen_core.tools import ToolResult, StaticStreamWorkbench
+
+
+event_logger = logging.getLogger(EVENT_LOGGER_NAME)
+logger = logging.getLogger(TRACE_LOGGER_NAME)
 
 HANDOFF_TOKEN = "<|handoff|>"
 
@@ -47,6 +65,8 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         self._output_content_type_format = output_content_type_format
         self._max_tool_iterations = max_tool_iterations
         self._is_running = False
+        self._cancellation_token = CancellationToken()
+        self._reflect_on_tool_use = False
 
     @property
     def produced_message_types(self) -> Sequence[type[BaseChatMessage]]:
@@ -143,23 +163,42 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             await self._model_context.add_message(message)
         
         # Call LLM
-        llm_messages = self._get_compatible_context(self._model_client, self._model_context)
+        llm_messages = await self._get_compatible_context(self._model_client, self._model_context)
 
         #TODO get tools based on context
         tools = [tool for wb in self._workbench for tool in await wb.list_tools()]
-        for loop_iteration in range(self._max_tool_iterations):
-            async for create_result_or_stream_event in self._call_llm(message_id, llm_messages, tools, cancellation_token):
-                if isinstance(create_result_or_stream_event, CreateResult):
-                    model_result = create_result_or_stream_event
-                elif isinstance(create_result_or_stream_event, ModelClientStreamingChunkEvent):
-                    yield create_result_or_stream_event
-                else:
-                    pass
+        async for create_result_or_stream_event in self._call_llm(message_id, llm_messages, tools, cancellation_token):
+            if isinstance(create_result_or_stream_event, CreateResult):
+                model_result = create_result_or_stream_event
+            elif isinstance(create_result_or_stream_event, ModelClientStreamingChunkEvent):
+                yield create_result_or_stream_event
+            else:
+                pass
+
+        assert model_result is not None, "No model result was produced."
+
+        # --- NEW: If the model produced a hidden "thought," yield it as an event ---
+        if model_result.thought:
+            thought_event = ThoughtEvent(content=model_result.thought, source=self.name)
+            yield thought_event
+
+        # Add the assistant message to the model context (including thought if present)
+        await self._model_context.add_message(
+            AssistantMessage(
+                content=model_result.content,
+                source=self.name,
+                thought=getattr(model_result, "thought", None),
+            )
+        )
+
+        for loop_iteration in range(1,self._max_tool_iterations):            
+            assert create_result_or_stream_event is not None, "No model result was produced."
             
             #when it finally output str it means this is the final response
             if isinstance(model_result.content, str):
-                return self._output_llm_response(model_result, message_id)
+                yield self._output_llm_response(model_result, message_id)
             
+            #otherwise it means it's a tool call
             assert isinstance(model_result.content, list) and all(
                 isinstance(item, FunctionCall) for item in model_result.content
             )
@@ -168,43 +207,202 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                 source=self.name,
                 models_usage=model_result.usage,
             )
+            event_logger.debug(tool_call_msg)
             yield tool_call_msg
 
-        assert model_result is not None, "No model result was produced."
+            stream = asyncio.Queue[BaseAgentEvent | BaseChatMessage | None]()
 
-        #TODO yield thought event
-        await self._model_context.add_message(
-            AssistantMessage(
-                content=model_result.content,
+            task = self._execute_tool_calls(model_result.content, stream)
+            while True:
+                event = await stream.get()
+                if event is None:
+                    # End of streaming, break the loop.
+                    break
+                if isinstance(event, BaseAgentEvent) or isinstance(event, BaseChatMessage):
+                    yield event
+            
+            executed_calls_and_results = await task
+            exec_results = [result for _, result in executed_calls_and_results]
+            tool_call_result_msg = ToolCallExecutionEvent(
+                content=exec_results,
                 source=self.name,
-                thought=getattr(model_result, "thought", None),
             )
-        )
-    def _execute_tool_calls(self, function_calls: List[FunctionCall], stream_queue: asyncio.Queue[BaseAgentEvent | BaseChatMessage | None]) -> List[Tuple[FunctionCall, FunctionExecutionResult]]:
-        """Execute tool calls and return results"""
-        async def _execute_tool_calls_task( 
-            function_calls: List[FunctionCall],
-            stream_queue: asyncio.Queue[BaseAgentEvent | BaseChatMessage | None],
-        ) -> List[Tuple[FunctionCall, FunctionExecutionResult]]:
-            results = await asyncio.gather(
-                *[
-                    cls._execute_tool_call(
-                        tool_call=call,
-                        workbench=workbench,
-                        handoff_tools=handoff_tools,
-                        agent_name=agent_name,
-                        cancellation_token=cancellation_token,
-                        stream=stream_queue,
-                    )
-                    for call in function_calls
-                ]
-            )
-            # Signal the end of streaming by putting None in the queue.
-            stream_queue.put_nowait(None)
-            return results
+            event_logger.debug(tool_call_result_msg)
+            await self._model_context.add_message(FunctionExecutionResultMessage(content=exec_results))
+            yield tool_call_result_msg
 
-        task = asyncio.create_task(_execute_tool_calls_task(function_calls, stream_queue))
-        return task
+            handoff_output = self._check_and_handle_handoff(
+                model_result=model_result,
+                executed_calls_and_results=executed_calls_and_results,
+                agent_name=self.name,
+            )
+            if handoff_output:
+                yield handoff_output
+            
+            async for create_result_or_stream_event in self._call_llm(message_id, llm_messages, tools, cancellation_token):
+                if isinstance(create_result_or_stream_event, CreateResult):
+                    model_result = create_result_or_stream_event
+                elif isinstance(create_result_or_stream_event, ModelClientStreamingChunkEvent):
+                    yield create_result_or_stream_event
+                else:
+                    pass
+            
+            # --- NEW: If the model produced a hidden "thought," yield it as an event ---
+            if model_result.thought:
+                thought_event = ThoughtEvent(content=model_result.thought, source=self.name)
+                yield thought_event
+
+            #TODO yield thought event
+            await self._model_context.add_message(
+                AssistantMessage(
+                    content=model_result.content,
+                    source=self.name,
+                    thought=getattr(model_result, "thought", None),
+                )
+            )
+        # If we exit the loop without returning, provide final response
+        yield self._output_llm_response(model_result, message_id)
+
+    def _check_and_handle_handoff(
+        self,
+        model_result: CreateResult,
+        executed_calls_and_results: List[Tuple[FunctionCall, FunctionExecutionResult]],
+        agent_name: str,
+    ) -> Optional[Response]:
+        """Check for and handle any handoff requests in the model result."""
+        if not self._workbench or not isinstance(model_result.content, list):
+            return None
+            
+        # Simplified handoff detection - just check if there are any handoff tool calls
+        handoff_reqs = [
+            call for call in model_result.content if (
+            isinstance(call, FunctionCall) 
+            and 'handoff' in call.name.lower()
+            )
+        ]
+        if len(handoff_reqs) > 0:
+            # We have at least one handoff function call
+            selected_handoff = handoff_reqs[0]
+            
+            if len(handoff_reqs) > 1:
+                logger.warning(f"Multiple handoffs detected. Only the first is executed.", stacklevel=2)
+            
+            # Find the corresponding execution result
+            selected_handoff_message = "Handoff requested"
+            for exec_call, exec_result in executed_calls_and_results:
+                if exec_call.name == selected_handoff.name:
+                    selected_handoff_message = exec_result.content
+                    break
+            
+            # Create handoff context
+            handoff_context: List[LLMMessage] = []
+            if hasattr(model_result, 'thought') and model_result.thought:
+                handoff_context.append(
+                    AssistantMessage(
+                        content=model_result.thought,
+                        source=agent_name,
+                    )
+                )
+
+            # Return handoff response
+            return Response(
+                chat_message=HandoffMessage(
+                    content=selected_handoff_message,
+                    target="next_agent",  # Default target
+                    source=agent_name,
+                    context=handoff_context,
+                ),
+            )
+        
+        return None
+    async def _execute_tool_calls(
+        self,
+        function_calls: List[FunctionCall],
+        stream: asyncio.Queue[BaseAgentEvent | BaseChatMessage | None],
+    ) -> List[Tuple[FunctionCall, FunctionExecutionResult]]:
+        """Execute tool calls and return results"""
+        results = []
+        for call in function_calls:
+            result = await self._execute_tool_call(
+                tool_call=call,
+                workbench=self._workbench,
+                cancellation_token=self._cancellation_token,
+                stream=stream,
+            )
+            results.append(result)
+        
+        # Signal the end of streaming by putting None in the queue.
+        await stream.put(None)
+        return results
+
+    async def _execute_tool_call(
+        self,
+        tool_call: FunctionCall,
+        workbench: Sequence[Workbench],
+        cancellation_token: CancellationToken,
+        stream: asyncio.Queue[BaseAgentEvent | BaseChatMessage | None],
+    ) -> Tuple[FunctionCall, FunctionExecutionResult]:
+        """Execute tool calls and return results"""
+        try:
+            arguments = json.loads(tool_call.arguments)
+        except json.JSONDecodeError as e:
+            return (
+                tool_call,
+                FunctionExecutionResult(
+                    content=f"Error: {e}",
+                    call_id=tool_call.id,
+                    is_error=True,
+                    name=tool_call.name,
+                ),
+            )
+        
+        for wb in workbench:
+            tools = await wb.list_tools()
+            if any(t["name"] == tool_call.name for t in tools):
+                if isinstance(wb, StaticStreamWorkbench):
+                    tool_result: ToolResult | None = None
+                    async for event in wb.call_tool_stream(
+                        name=tool_call.name,
+                        arguments=arguments,
+                        cancellation_token=cancellation_token,
+                        call_id=tool_call.id,
+                    ):
+                        if isinstance(event, ToolResult):
+                            tool_result = event
+                        elif isinstance(event, BaseAgentEvent) or isinstance(event, BaseChatMessage):
+                            await stream.put(event)
+                        else:
+                            logger.warning(
+                                f"Unexpected event type: {type(event)} in tool call streaming.",
+                                stacklevel=2,
+                            )
+                    assert isinstance(tool_result, ToolResult), "Tool result should not be None in streaming mode."
+                else:
+                    tool_result = await wb.call_tool(
+                        name=tool_call.name,
+                        arguments=arguments,
+                        cancellation_token=cancellation_token,
+                        call_id=tool_call.id,
+                    )
+                return (
+                    tool_call,
+                    FunctionExecutionResult(
+                        content=tool_result.to_text(),
+                        call_id=tool_call.id,
+                        is_error=tool_result.is_error,
+                        name=tool_call.name,
+                    ),
+                )
+
+        return (
+            tool_call,
+            FunctionExecutionResult(
+                content=f"Error: tool '{tool_call.name}' not found in any workbench",
+                call_id=tool_call.id,
+                is_error=True,
+                name=tool_call.name,
+            ),
+        )
 
     def _output_llm_response(self, model_result: CreateResult, message_id: str) -> Response:
         if self._output_content_type:
@@ -231,7 +429,8 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
     ) -> AsyncGenerator[Union[ModelClientStreamingChunkEvent, CreateResult], None]:
         """Call LLM and monitor streaming output for code blocks"""
 
-        if self._model_client_stream:
+        # Check if model client supports streaming
+        if hasattr(self._model_client, 'create_stream'):
             async for chunk in self._model_client.create_stream(
                 llm_messages,
                 tools=tools,
@@ -251,7 +450,8 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                 json_output=self._output_content_type,
                 cancellation_token=cancellation_token,
             )
-            return model_result
+
+        yield model_result
 
 
     async def _call_llm_with_code_monitoring(
@@ -267,7 +467,10 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         all_messages = await self._model_context.get_messages()
         
         # Get compatible context (simplified, no vision handling needed)
-        llm_messages = self._get_compatible_context(self._model_client, all_messages)
+        if self._model_client.model_info["vision"]:
+            llm_messages = all_messages
+        else:
+            llm_messages = remove_images(all_messages)
         
         # Code monitoring state
         code_buffer = ""
@@ -341,9 +544,9 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             error_msg = TextMessage(content=f"LLM call failed: {str(e)}", source=self.name)
             yield Response(chat_message=error_msg)
 
-    def _get_compatible_context(self, model_client: ChatCompletionClient, model_context: ChatCompletionContext) -> Sequence[LLMMessage]:
+    async def _get_compatible_context(self, model_client: ChatCompletionClient, model_context: ChatCompletionContext) -> Sequence[LLMMessage]:
         """Get compatible context - simplified without vision handling"""
-        messages = model_context.get_messages()
+        messages = await model_context.get_messages()
         if model_client.model_info["vision"]:
             return messages
         else:
@@ -418,8 +621,5 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             except OSError:
                 pass
     
-    async def on_reset(self, cancellation_token: CancellationToken) -> None:
-        self._code_buffer = ""
-        self._in_code_block = False
 
 

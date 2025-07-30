@@ -85,6 +85,14 @@ python/packages/agent_fusion/src/
 2. **Session Management**: Use `async with await self.db.get_session() as session:`
 3. **Error Handling**: Always rollback on exceptions and log errors
 4. **Type Safety**: Use proper type hints and dataclasses
+5. **Import Rules**: **MANDATORY** - Always reference imports from project root based on pyproject.toml structure
+   - Project structure: `python/packages/agent_fusion/src/` contains the main package
+   - ✅ GOOD: `from agents.base.handoff import HandoffType` (from src root, full path)
+   - ✅ GOOD: `from base.groupchat_queue import BaseChatQueue` (from src root, full path)
+   - ✅ GOOD: `from .handoff import HandoffType` (same-level module within same directory)
+   - ❌ BAD: `from ..base.handoff import HandoffType` (multiple parent directory traversal)
+   - ❌ BAD: `from base.handoff import HandoffType` (incorrect - handoff is in agents/base not base)
+   - **Rule**: Never use `..` to traverse up directories; always import from src root with full path or same level
 
 ### Type Hint Guidelines
 **MANDATORY REQUIREMENT**: All code must include proper type hints following these rules:

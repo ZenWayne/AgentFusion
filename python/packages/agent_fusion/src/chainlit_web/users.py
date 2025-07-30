@@ -28,7 +28,7 @@ from data_layer.data_layer import AgentFusionDataLayer
 from data_layer.models.llm_model import LLMModel
 from builders.agent_builder import AgentBuilder
 from chainlit.types import ChatProfile
-from base.goupchat_queue import BaseChatQueue
+from base.groupchat_queue import BaseChatQueue
 from autogen_core import CancellationToken
 from logging import getLogger
 
