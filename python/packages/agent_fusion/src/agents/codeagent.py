@@ -32,6 +32,7 @@ import json
 from typing import Any
 import warnings
 from autogen_core.tools import ToolResult, StaticStreamWorkbench
+from agents.handoff import HandoffType
 
 
 event_logger = logging.getLogger(EVENT_LOGGER_NAME)
@@ -67,7 +68,8 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         self._is_running = False
         self._cancellation_token = CancellationToken()
         self._reflect_on_tool_use = False
-
+        self._handoff_tool_name : set[str] | None = None
+        
     @property
     def produced_message_types(self) -> Sequence[type[BaseChatMessage]]:
         return (TextMessage,)
@@ -160,13 +162,19 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         
         # Add new messages to context
         for message in messages:
-            await self._model_context.add_message(message)
+            await self._model_context.add_message(message.to_model_message())
         
         # Call LLM
         llm_messages = await self._get_compatible_context(self._model_client, self._model_context)
 
         #TODO get tools based on context
         tools = [tool for wb in self._workbench for tool in await wb.list_tools()]
+        if not self._handoff_tool_name:
+            self._handoff_tool_name = { 
+                tool["name"] for wb in self._workbench 
+                for tool in await wb.list_tools() 
+                if tool.get("type", None) == HandoffType.HANDOFF_TOOL }
+
         async for create_result_or_stream_event in self._call_llm(message_id, llm_messages, tools, cancellation_token):
             if isinstance(create_result_or_stream_event, CreateResult):
                 model_result = create_result_or_stream_event
@@ -197,48 +205,51 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             #when it finally output str it means this is the final response
             if isinstance(model_result.content, str):
                 yield self._output_llm_response(model_result, message_id)
+            else:
             
-            #otherwise it means it's a tool call
-            assert isinstance(model_result.content, list) and all(
-                isinstance(item, FunctionCall) for item in model_result.content
-            )
-            tool_call_msg = ToolCallRequestEvent(
-                content=model_result.content,
-                source=self.name,
-                models_usage=model_result.usage,
-            )
-            event_logger.debug(tool_call_msg)
-            yield tool_call_msg
+                #otherwise it means it's a tool call
+                # assert isinstance(model_result.content, list) and all(
+                #     isinstance(item, FunctionCall) for item in model_result.content
+                # )
+                tool_call_msg = ToolCallRequestEvent(
+                    content=model_result.content,
+                    source=self.name,
+                    models_usage=model_result.usage,
+                )
+                event_logger.debug(tool_call_msg)
+                yield tool_call_msg
 
-            stream = asyncio.Queue[BaseAgentEvent | BaseChatMessage | None]()
+                stream = asyncio.Queue[BaseAgentEvent | BaseChatMessage | None]()
 
-            task = self._execute_tool_calls(model_result.content, stream)
-            while True:
-                event = await stream.get()
-                if event is None:
-                    # End of streaming, break the loop.
-                    break
-                if isinstance(event, BaseAgentEvent) or isinstance(event, BaseChatMessage):
-                    yield event
+                task = asyncio.create_task(self._execute_tool_calls(model_result.content, stream))
+                while True:
+                    event = await stream.get()
+                    if event is None:
+                        # End of streaming, break the loop.
+                        break
+                    if isinstance(event, BaseAgentEvent) or isinstance(event, BaseChatMessage):
+                        yield event
+                
+                executed_calls_and_results = await task
+                exec_results = [result for _, result in executed_calls_and_results]
+                tool_call_result_msg = ToolCallExecutionEvent(
+                    content=exec_results,
+                    source=self.name,
+                )
+                event_logger.debug(tool_call_result_msg)
+                await self._model_context.add_message(FunctionExecutionResultMessage(content=exec_results))
+                yield tool_call_result_msg
+
+                handoff_output = self._check_and_handle_handoff(
+                    model_result=model_result,
+                    executed_calls_and_results=executed_calls_and_results,
+                    agent_name=self.name,
+                )
+                if handoff_output:
+                    yield handoff_output
+                    return
             
-            executed_calls_and_results = await task
-            exec_results = [result for _, result in executed_calls_and_results]
-            tool_call_result_msg = ToolCallExecutionEvent(
-                content=exec_results,
-                source=self.name,
-            )
-            event_logger.debug(tool_call_result_msg)
-            await self._model_context.add_message(FunctionExecutionResultMessage(content=exec_results))
-            yield tool_call_result_msg
-
-            handoff_output = self._check_and_handle_handoff(
-                model_result=model_result,
-                executed_calls_and_results=executed_calls_and_results,
-                agent_name=self.name,
-            )
-            if handoff_output:
-                yield handoff_output
-            
+            llm_messages = await self._get_compatible_context(self._model_client, self._model_context)
             async for create_result_or_stream_event in self._call_llm(message_id, llm_messages, tools, cancellation_token):
                 if isinstance(create_result_or_stream_event, CreateResult):
                     model_result = create_result_or_stream_event
@@ -270,14 +281,14 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         agent_name: str,
     ) -> Optional[Response]:
         """Check for and handle any handoff requests in the model result."""
-        if not self._workbench or not isinstance(model_result.content, list):
+        if len(self._workbench) == 0 or not isinstance(model_result.content, list):
             return None
-            
+
         # Simplified handoff detection - just check if there are any handoff tool calls
         handoff_reqs = [
             call for call in model_result.content if (
             isinstance(call, FunctionCall) 
-            and 'handoff' in call.name.lower()
+            and call.name in self._handoff_tool_name
             )
         ]
         if len(handoff_reqs) > 0:

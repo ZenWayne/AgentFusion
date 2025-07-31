@@ -53,4 +53,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    #python -m cli.chat group_chat file_system "list all files of current directory"
+    #python -m cli.chat agent assistant_agent "list all files of current directory"

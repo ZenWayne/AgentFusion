@@ -4,29 +4,43 @@ from pydantic import BaseModel
 from autogen_core.tools import FunctionTool
 from autogen_ext.tools.mcp import StdioMcpToolAdapter, SseMcpToolAdapter
 from autogen_ext.tools.mcp import StreamableHttpMcpToolAdapter
+
 from autogen_ext.tools.mcp import StdioServerParams, SseServerParams, StreamableHttpServerParams
 from autogen_ext.tools.mcp import create_mcp_server_session
 from autogen_ext.tools.mcp import McpServerParams
 from mcp import ClientSession
-from enum import Enum
+from enum import StrEnum
 from typing import Callable, Any
+from mcp.types import ListToolsResult, Tool
+from autogen_core.tools._base import ToolSchema
 
-class HandoffType(Enum):
+class HandoffType(StrEnum):
     HANDOFF_TOOL = "handoff_tool"
     NORMAL_TOOL = "normal_tool"
 
+class ToolSchemaWithType(ToolSchema):
+    type: HandoffType
 
 class FunctionToolWithType(FunctionTool):
     type: HandoffType
+    def __init__(self, *args, **kwargs):
+        _type = kwargs.get("type")
+        _type=kwargs.pop("type")
+        super().__init__(*args, **kwargs)
+        self.type = HandoffType.HANDOFF_TOOL if _type is None else _type
+    
+    @property
+    def schema(self) -> ToolSchemaWithType:
+        base_ret = super().schema
 
-class StdioMcpToolAdapterWithType(StdioMcpToolAdapter):
-    type: HandoffType
+        return ToolSchemaWithType(
+            name=base_ret["name"],
+            description=base_ret["description"],
+            parameters=base_ret["parameters"],
+            strict=base_ret["strict"],
+            type=self.type
+        )
 
-class SseMcpToolAdapterWithType(SseMcpToolAdapter):
-    type: HandoffType
-
-class StreamableHttpMcpToolAdapterWithType(StreamableHttpMcpToolAdapter):
-    type: HandoffType
 
 async def mcp_server_tools_with_type(
         server_params: McpServerParams,
@@ -41,12 +55,12 @@ async def mcp_server_tools_with_type(
         tools = await session.list_tools()
 
     if isinstance(server_params, StdioServerParams):
-        return [StdioMcpToolAdapterWithType(server_params=server_params, tool=tool, session=session) for tool in tools.tools]
+        return [StdioMcpToolAdapter(server_params=server_params, tool=tool, session=session) for tool in tools.tools]
     elif isinstance(server_params, SseServerParams):
-        return [SseMcpToolAdapterWithType(server_params=server_params, tool=tool, session=session) for tool in tools.tools]
+        return [SseMcpToolAdapter(server_params=server_params, tool=tool, session=session) for tool in tools.tools]
     elif isinstance(server_params, StreamableHttpServerParams):
         return [
-            StreamableHttpMcpToolAdapterWithType(server_params=server_params, tool=tool, session=session)
+            StreamableHttpMcpToolAdapter(server_params=server_params, tool=tool, session=session)
             for tool in tools.tools
         ]
     raise ValueError(f"Unsupported server params type: {type(server_params)}")

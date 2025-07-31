@@ -47,8 +47,8 @@ class AgentBuilder:
                 )
                 # Flatten the list of lists
                 tools = [tool for sublist in tools for tool in sublist]
-                if agent_info.user_handoff is not None:
-                    tools += [HandoffWithType(target=agent_info.user_handoff.target, message=agent_info.user_handoff.message)]
+                if agent_info.user_handoff_message is not None:
+                    tools += [HandoffWithType(target="user", message=agent_info.user_handoff_message).handoff_tool]
                 model_client_builder: ModelClientBuilder = self.model_client_builder()
                 model_client_config = model_client_builder.get_component_by_name(agent_info.model_client)
                 async with model_client_builder.build(model_client_config) as model_client:

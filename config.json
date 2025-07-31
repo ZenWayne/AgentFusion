@@ -18,13 +18,13 @@
             "env": {}
         },
         "file_system": {
-            "command": "node",
+            "command": "npx",
             "args": [
-                "${userHome}\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-filesystem\\dist\\index.js", 
+                "@modelcontextprotocol/server-filesystem", 
                 "${cwd}"
             ],
             "env": {},
-            "read_timeout_seconds": 10
+            "read_timeout_seconds": 30
         }
     },
     "agents": {
@@ -134,13 +134,14 @@
             "model_client": "deepseek-chat_DeepSeek",
             "mcp_tools": []
         },
-        "assistance_agent": {
-            "name": "assistance_agent",
-            "description": "重构后的assistance_agent",
+        "assistant_agent": {
+            "name": "assistant_agent",
+            "description": "重构后的assistant_agent",
             "labels": ["agent", "code_execution", "python", "development"],
             "type": "code_agent",
-            "prompt_path": "agent/assistance_agent_pt.md",
+            "prompt_path": "agent/assistant_agent_pt.md",
             "model_client": "deepseek-chat_DeepSeek",
+            "user_handoff_message": "Transfer to user",
             "mcp_tools": ["file_system"]
         }
     },

@@ -28,7 +28,7 @@ class AssistantAgentConfig(BaseAgentConfig):
     prompt_path: str | None = None
     prompt: Callable[[], str] | None = None
     #CR ajust database and agent_model 
-    user_handoff: str | None = None
+    user_handoff_message: str | None = None
     model_client: model_client_label
     mcp_tools: list[McpServerParams] | None = None
 
