@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, Text, DateTime, func, UUID
 from .base_table import BaseComponentTable
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy import String as SQLString
 
 
 class AgentTable(BaseComponentTable):
@@ -18,3 +19,4 @@ class AgentTable(BaseComponentTable):
     agent_type = Column(String(50), default='assistant_agent')
     labels = Column(ARRAY(Text), default="[]")
     input_func = Column(String(50), default='input')
+    handoff_tools = Column(JSONB, default=[])

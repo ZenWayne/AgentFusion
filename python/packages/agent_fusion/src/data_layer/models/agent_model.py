@@ -138,7 +138,7 @@ class AgentModel(ComponentModel, AgentBuilder):
             # Use dedicated agent_type column
             agent_type = table_row.agent_type or "assistant_agent"
             
-            if agent_type == AgentType.ASSISTANT_AGENT:
+            if agent_type in [AgentType.ASSISTANT_AGENT, AgentType.CODE_AGENT]:
                 # Load MCP tools from relationship table
                 mcp_tools = None
                 if mcp_server_names:
@@ -148,11 +148,32 @@ class AgentModel(ComponentModel, AgentBuilder):
                         if server_params:
                             mcp_tools.append(server_params)
                 
+                # Handle handoff_tools - deserialize from JSON if needed
+                handoff_tools = table_row.handoff_tools or []
+                if isinstance(handoff_tools, str):
+                    import json
+                    try:
+                        handoff_tools = json.loads(handoff_tools)
+                    except (json.JSONDecodeError, ValueError):
+                        handoff_tools = []
+                
+                # Convert dict list to HandoffTools objects if needed
+                from schemas.agent import HandoffTools
+                handoff_tools_objects = None
+                if handoff_tools:
+                    handoff_tools_objects = []
+                    for tool in handoff_tools:
+                        if isinstance(tool, dict):
+                            handoff_tools_objects.append(HandoffTools(**tool))
+                        else:
+                            handoff_tools_objects.append(tool)
+                
                 return AssistantAgentConfig(
-                    type=AgentType.ASSISTANT_AGENT,
+                    type=agent_type,
                     model_client=model_client_label or "default",
                     prompt=lambda content=current_prompt: content or "",
                     mcp_tools=mcp_tools,
+                    handoff_tools=handoff_tools_objects,
                     **base_config
                 )
             else:
@@ -193,6 +214,23 @@ class AgentModel(ComponentModel, AgentBuilder):
                 # Add input_func if it exists (for UserProxyAgent)
                 if hasattr(component_info, 'input_func'):
                     update_values["input_func"] = component_info.input_func
+                
+                # Add handoff_tools if it exists (for AssistantAgent)
+                if hasattr(component_info, 'handoff_tools') and component_info.handoff_tools is not None:
+                    import json
+                    # Convert HandoffTools objects to dict for JSON serialization
+                    handoff_tools_list = []
+                    for tool in component_info.handoff_tools:
+                        if hasattr(tool, 'model_dump'):  # Pydantic model
+                            handoff_tools_list.append(tool.model_dump())
+                        elif hasattr(tool, 'dict'):  # Pydantic v1 style
+                            handoff_tools_list.append(tool.dict())
+                        elif isinstance(tool, dict):
+                            handoff_tools_list.append(tool)
+                        else:
+                            # Fallback for other objects
+                            handoff_tools_list.append({"target": str(tool.target), "message": str(tool.message)})
+                    update_values["handoff_tools"] = handoff_tools_list
                 
                 # Use UPDATE statement instead of modifying ORM object
                 update_stmt = update(AgentTable).where(

@@ -29,7 +29,7 @@ from data_layer.models.tables import (
 from data_layer.models.prompt_model import PromptModel
 from data_layer.models.mcp_model import McpModel
 from schemas.component import ComponentInfo
-from schemas.agent import AgentType, AssistantAgentConfig, UserProxyAgentConfig
+from schemas.agent import AgentType, AssistantAgentConfig, UserProxyAgentConfig, HandoffTools
 
 
 class SQLiteDBDataLayer(DBDataLayer):
@@ -153,7 +153,8 @@ async def sample_agent(sqlite_db, sample_model_client):
             agent_uuid=str(uuid.uuid4()),
             provider="test-provider",
             agent_type="assistant_agent",
-            labels='["test", "assistant"]'
+            labels='["test", "assistant"]',
+            handoff_tools='[]'  # Empty handoff tools by default
         )
         session.add(agent)
         await session.commit()
@@ -208,25 +209,52 @@ async def sample_mcp_server(sqlite_db):
         return mcp_server
 
 
+@pytest_asyncio.fixture
+async def sample_agent_with_handoff_tools(sqlite_db, sample_model_client):
+    """Create a sample agent with handoff_tools for testing"""
+    import json
+    handoff_tools_data = [
+        {"target": "user", "message": "Transfer to user"},
+        {"target": "admin", "message": "Escalate to admin"}
+    ]
+    
+    async with await sqlite_db.get_session() as session:
+        agent = AgentTable(
+            id=2,
+            name="handoff-agent",
+            description="Agent with handoff tools",
+            model_client_id=sample_model_client.id,
+            agent_uuid=str(uuid.uuid4()),
+            provider="test-provider",
+            agent_type="assistant_agent",
+            labels='["handoff", "test"]',
+            handoff_tools=json.dumps(handoff_tools_data)
+        )
+        session.add(agent)
+        await session.commit()
+        await session.refresh(agent)
+        return agent
+
+
 class TestAgentModel:
     """Test cases for AgentModel class"""
     
     @pytest.mark.asyncio
     async def test_get_all_components_empty(self, agent_model: AgentModel):
         """Test get_all_components with empty database"""
-        result: Dict[str, ComponentInfo] = await agent_model.get_all_components()
-        assert isinstance(result, dict)
+        result: List[ComponentInfo] = await agent_model.get_all_components()
+        assert isinstance(result, list)
         assert len(result) == 0
 
     @pytest.mark.asyncio  
     async def test_get_all_components_with_data(self, agent_model, sample_agent, sample_prompt):
         """Test get_all_components with sample data"""
-        result: Dict[str, ComponentInfo] = await agent_model.get_all_components()
+        result: List[ComponentInfo] = await agent_model.get_all_components()
         
-        assert isinstance(result, dict)
-        assert "test-agent" in result
+        assert isinstance(result, list)
+        assert len(result) == 1
         
-        agent_info: AssistantAgentConfig = result["test-agent"]
+        agent_info: AssistantAgentConfig = result[0]
         assert isinstance(agent_info, AssistantAgentConfig)
         assert agent_info.name == "test-agent"
         assert agent_info.description == "A test assistant agent"
@@ -250,12 +278,14 @@ class TestAgentModel:
             await session.commit()
         
         # Should not include inactive agent
-        result: Dict[str, ComponentInfo] = await agent_model.get_all_components(filter_active=True)
-        assert "inactive-agent" not in result
+        result: List[ComponentInfo] = await agent_model.get_all_components(filter_active=True)
+        inactive_names = [component.name for component in result]
+        assert "inactive-agent" not in inactive_names
         
         # Should include inactive agent when filter is disabled
         result = await agent_model.get_all_components(filter_active=False)
-        assert "inactive-agent" in result
+        all_names = [component.name for component in result]
+        assert "inactive-agent" in all_names
 
     @pytest.mark.asyncio
     async def test_to_component_info_assistant_agent(self, agent_model, sample_agent, sample_prompt):
@@ -493,6 +523,272 @@ class TestAgentModel:
         mcp_tool = component_info.mcp_tools[0]
         assert mcp_tool.type == "StdioServerParams"
         assert mcp_tool.command == "test-command"
+
+
+class TestAgentModelHandoffTools:
+    """Test cases for handoff_tools functionality in AgentModel"""
+    
+    @pytest.mark.asyncio
+    async def test_to_component_info_with_handoff_tools(self, agent_model, sample_agent_with_handoff_tools):
+        """Test to_component_info correctly deserializes handoff_tools from JSON"""
+        component_info: AssistantAgentConfig = await agent_model.to_component_info(sample_agent_with_handoff_tools)
+        
+        assert isinstance(component_info, AssistantAgentConfig)
+        assert component_info.handoff_tools is not None
+        assert len(component_info.handoff_tools) == 2
+        
+        # Check first handoff tool
+        handoff_tool_1 = component_info.handoff_tools[0]
+        assert isinstance(handoff_tool_1, HandoffTools)
+        assert handoff_tool_1.target == "user"
+        assert handoff_tool_1.message == "Transfer to user"
+        
+        # Check second handoff tool
+        handoff_tool_2 = component_info.handoff_tools[1]
+        assert isinstance(handoff_tool_2, HandoffTools)
+        assert handoff_tool_2.target == "admin"
+        assert handoff_tool_2.message == "Escalate to admin"
+
+    @pytest.mark.asyncio
+    async def test_to_component_info_with_empty_handoff_tools(self, agent_model, sample_agent):
+        """Test to_component_info handles empty handoff_tools correctly"""
+        component_info: AssistantAgentConfig = await agent_model.to_component_info(sample_agent)
+        
+        assert isinstance(component_info, AssistantAgentConfig)
+        assert component_info.handoff_tools is None
+
+    @pytest.mark.asyncio
+    async def test_to_component_info_with_null_handoff_tools(self, agent_model, sqlite_db, sample_model_client):
+        """Test to_component_info handles NULL handoff_tools correctly"""
+        # Create agent with NULL handoff_tools
+        async with await sqlite_db.get_session() as session:
+            agent = AgentTable(
+                name="null-handoff-agent",
+                description="Agent with NULL handoff tools",
+                model_client_id=sample_model_client.id,
+                agent_uuid=str(uuid.uuid4()),
+                provider="test-provider",
+                agent_type="assistant_agent",
+                labels='["test"]',
+                handoff_tools=None
+            )
+            session.add(agent)
+            await session.commit()
+            await session.refresh(agent)
+        
+        component_info: AssistantAgentConfig = await agent_model.to_component_info(agent)
+        
+        assert isinstance(component_info, AssistantAgentConfig)
+        assert component_info.handoff_tools is None
+
+    @pytest.mark.asyncio
+    async def test_to_component_info_with_invalid_handoff_tools_json(self, agent_model, sqlite_db, sample_model_client):
+        """Test to_component_info handles invalid JSON in handoff_tools gracefully"""
+        # Create agent with invalid JSON in handoff_tools
+        async with await sqlite_db.get_session() as session:
+            agent = AgentTable(
+                name="invalid-json-agent",
+                description="Agent with invalid JSON handoff tools",
+                model_client_id=sample_model_client.id,
+                agent_uuid=str(uuid.uuid4()),
+                provider="test-provider",
+                agent_type="assistant_agent",
+                labels='["test"]',
+                handoff_tools='{"invalid": json}'  # Invalid JSON
+            )
+            session.add(agent)
+            await session.commit()
+            await session.refresh(agent)
+        
+        component_info: AssistantAgentConfig = await agent_model.to_component_info(agent)
+        
+        assert isinstance(component_info, AssistantAgentConfig)
+        assert component_info.handoff_tools is None
+
+    @pytest.mark.asyncio
+    async def test_update_component_by_id_with_handoff_tools(self, agent_model, sample_agent):
+        """Test update_component_by_id correctly serializes handoff_tools to JSON"""
+        # Create updated component info with handoff_tools
+        handoff_tools = [
+            HandoffTools(target="user", message="Complete task and return to user"),
+            HandoffTools(target="supervisor", message="Request supervisor approval")
+        ]
+        
+        updated_info: AssistantAgentConfig = AssistantAgentConfig(
+            type=AgentType.ASSISTANT_AGENT,
+            name="updated-handoff-agent",
+            description="Updated with handoff tools",
+            labels=["updated", "handoff"],
+            model_client="deepseek-chat_DeepSeek",
+            prompt=lambda: "Updated prompt content",
+            handoff_tools=handoff_tools
+        )
+        
+        result: AssistantAgentConfig = await agent_model.update_component_by_id(sample_agent.id, updated_info)
+        
+        assert isinstance(result, AssistantAgentConfig)
+        assert result.name == "updated-handoff-agent"
+        assert result.handoff_tools is not None
+        assert len(result.handoff_tools) == 2
+        
+        # Verify data was persisted correctly in database
+        async with await agent_model.db.get_session() as session:
+            from sqlalchemy import select
+            stmt = select(AgentTable).where(AgentTable.id == sample_agent.id)
+            result = await session.execute(stmt)
+            updated_agent = result.scalar_one()
+            
+            # In SQLite, the handoff_tools might be stored as a list or JSON string
+            stored_handoff_tools = updated_agent.handoff_tools
+            if isinstance(stored_handoff_tools, str):
+                import json
+                stored_handoff_tools = json.loads(stored_handoff_tools)
+            
+            assert len(stored_handoff_tools) == 2
+            assert stored_handoff_tools[0]["target"] == "user"
+            assert stored_handoff_tools[0]["message"] == "Complete task and return to user"
+            assert stored_handoff_tools[1]["target"] == "supervisor"
+            assert stored_handoff_tools[1]["message"] == "Request supervisor approval"
+
+    @pytest.mark.asyncio
+    async def test_update_component_by_id_with_empty_handoff_tools(self, agent_model, sample_agent_with_handoff_tools):
+        """Test update_component_by_id handles empty handoff_tools correctly"""
+        # Update with empty handoff_tools
+        updated_info: AssistantAgentConfig = AssistantAgentConfig(
+            type=AgentType.ASSISTANT_AGENT,
+            name="cleared-handoff-agent",
+            description="Cleared handoff tools",
+            labels=["cleared"],
+            model_client="deepseek-chat_DeepSeek",
+            prompt=lambda: "Prompt content",
+            handoff_tools=[]
+        )
+        
+        result: AssistantAgentConfig = await agent_model.update_component_by_id(sample_agent_with_handoff_tools.id, updated_info)
+        
+        assert isinstance(result, AssistantAgentConfig)
+        assert result.handoff_tools is None
+
+    @pytest.mark.asyncio
+    async def test_update_component_by_id_with_none_handoff_tools(self, agent_model, sample_agent_with_handoff_tools):
+        """Test update_component_by_id handles None handoff_tools correctly"""
+        # Update with None handoff_tools
+        updated_info: AssistantAgentConfig = AssistantAgentConfig(
+            type=AgentType.ASSISTANT_AGENT,
+            name="none-handoff-agent",
+            description="None handoff tools",
+            labels=["none"],
+            model_client="deepseek-chat_DeepSeek",
+            prompt=lambda: "Prompt content",
+            handoff_tools=None
+        )
+        
+        result: AssistantAgentConfig = await agent_model.update_component_by_id(sample_agent_with_handoff_tools.id, updated_info)
+        
+        assert isinstance(result, AssistantAgentConfig)
+        # The original handoff_tools should remain unchanged when None is passed
+        assert result.handoff_tools is not None
+        assert len(result.handoff_tools) == 2
+
+    @pytest.mark.asyncio
+    async def test_handoff_tools_serialization_with_dict_input(self, agent_model, sample_agent):
+        """Test handoff_tools serialization handles dict input correctly"""
+        # Create handoff_tools as dicts instead of HandoffTools objects
+        handoff_tools_dicts = [
+            {"target": "user", "message": "Task completed"},
+            {"target": "manager", "message": "Needs approval"}
+        ]
+        
+        # Manually create AssistantAgentConfig with dict handoff_tools
+        updated_info: AssistantAgentConfig = AssistantAgentConfig(
+            type=AgentType.ASSISTANT_AGENT,
+            name="dict-handoff-agent",
+            description="Dict handoff tools",
+            labels=["dict"],
+            model_client="deepseek-chat_DeepSeek",
+            prompt=lambda: "Prompt content"
+        )
+        # Manually set handoff_tools to bypass Pydantic validation
+        updated_info.handoff_tools = handoff_tools_dicts
+        
+        result: AssistantAgentConfig = await agent_model.update_component_by_id(sample_agent.id, updated_info)
+        
+        assert isinstance(result, AssistantAgentConfig)
+        assert result.handoff_tools is not None
+        assert len(result.handoff_tools) == 2
+
+    @pytest.mark.asyncio
+    async def test_handoff_tools_backward_compatibility(self, agent_model, sqlite_db, sample_model_client):
+        """Test that existing agents without handoff_tools work correctly"""
+        # Create agent without handoff_tools field (simulating legacy data)
+        async with await sqlite_db.get_session() as session:
+            # Insert using raw SQL to bypass ORM default values
+            from sqlalchemy import text
+            insert_stmt = text("""
+                INSERT INTO agents (name, description, model_client_id, agent_uuid, provider, agent_type, labels)
+                VALUES (:name, :description, :model_client_id, :agent_uuid, :provider, :agent_type, :labels)
+            """)
+            await session.execute(insert_stmt, {
+                "name": "legacy-agent",
+                "description": "Legacy agent without handoff_tools",
+                "model_client_id": sample_model_client.id,
+                "agent_uuid": str(uuid.uuid4()),
+                "provider": "legacy-provider",
+                "agent_type": "assistant_agent",
+                "labels": '["legacy"]'
+            })
+            await session.commit()
+            
+            # Fetch the created agent
+            from sqlalchemy import select
+            stmt = select(AgentTable).where(AgentTable.name == "legacy-agent")
+            result = await session.execute(stmt)
+            legacy_agent = result.scalar_one()
+        
+        component_info: AssistantAgentConfig = await agent_model.to_component_info(legacy_agent)
+        
+        assert isinstance(component_info, AssistantAgentConfig)
+        assert component_info.name == "legacy-agent"
+        assert component_info.handoff_tools is None
+
+    @pytest.mark.asyncio
+    async def test_get_all_components_includes_handoff_tools(self, agent_model, sample_agent_with_handoff_tools, sample_prompt):
+        """Test get_all_components includes handoff_tools in results"""
+        # Create a prompt for the handoff agent
+        async with await agent_model.db.get_session() as session:
+            prompt = PromptTable(
+                prompt_id="handoff-agent_system",
+                name="handoff-agent System Message",
+                category="agent",
+                subcategory="system_message",
+                agent_id=sample_agent_with_handoff_tools.id,
+                prompt_uuid=str(uuid.uuid4())
+            )
+            session.add(prompt)
+            await session.flush()
+            
+            prompt_version = PromptVersionTable(
+                prompt_id=prompt.id,
+                version_number=1,
+                content="You are a handoff test assistant.",
+                is_current=True
+            )
+            session.add(prompt_version)
+            await session.commit()
+        
+        components = await agent_model.get_all_components()
+        
+        # Find the handoff agent in the list
+        handoff_agent_info = None
+        for component in components:
+            if component.name == "handoff-agent":
+                handoff_agent_info = component
+                break
+        
+        assert handoff_agent_info is not None
+        assert isinstance(handoff_agent_info, AssistantAgentConfig)
+        assert handoff_agent_info.handoff_tools is not None
+        assert len(handoff_agent_info.handoff_tools) == 2
 
 
 if __name__ == "__main__":

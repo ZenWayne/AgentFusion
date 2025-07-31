@@ -28,13 +28,6 @@
         }
     },
     "agents": {
-        "user": {
-            "name": "user",
-            "description": "真的人类用户，除此以外都是agent",
-            "labels":["user", "agent"],
-            "type": "user_proxy_agent",
-            "input_func": "wrapped_input"
-        },
         "human_proxy_ui_designer": {
             "name": "human_proxy_ui_designer",
             "description": "交互设计师兼产品设计师，负责管理产品需求和设计,真的人类用户，除此以外都是agent",
@@ -141,7 +134,12 @@
             "type": "code_agent",
             "prompt_path": "agent/assistant_agent_pt.md",
             "model_client": "deepseek-chat_DeepSeek",
-            "user_handoff_message": "Transfer to user",
+            "handoff_tools": [
+                {
+                    "target": "user",
+                    "message": "Transfer to user"
+                }
+            ],
             "mcp_tools": ["file_system"]
         }
     },

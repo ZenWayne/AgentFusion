@@ -5,8 +5,8 @@ class FilterType:
     LLMCall = 'LLMCall'
     ToolCall = 'ToolCall'
 
-def add_filter(logger:logging.Logger, filter_type:list[FilterType]):
-    logger.addFilter(CallFilter(filter_type))
+def add_filter(filterer:logging.Filterer, filter_type:list[FilterType]):
+    filterer.addFilter(CallFilter(filter_type))
 
 class CallFilter(logging.Filter):
     """过滤器：只允许LLMCall类型的日志通过"""

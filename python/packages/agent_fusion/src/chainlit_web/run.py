@@ -9,6 +9,8 @@ from chainlit.input_widget import Select
 from chainlit_web.user.auth import get_data_layer
 from data_layer.data_layer import database_layer
 from chainlit_web.users import User, UserSessionManager
+from logging import getLogger
+from aglogger.agentgerator_logger import gobal_log_filterer
 
 from schemas.model_info import ModelClientConfig
 
@@ -38,8 +40,9 @@ async def on_app_startup() -> None:
     load_dotenv()
     # config.run.port = 443
     # config.run.host = "e73cd5b88ea8.ngrok-free.app"
-    enable_chainlit_logger()
-    enable_autogen_logger(["autogen_core.events"], filter_types=[FilterType.ToolCall, FilterType.LLMCall])
+    #enable_chainlit_logger()
+    #enable_autogen_logger(["autogen_core.events"], filter_types=[FilterType.ToolCall, FilterType.LLMCall])
+    enable_autogen_logger(["chainlit_web","chainlit"])
     global database_layer
     database_layer=get_data_layer()
     

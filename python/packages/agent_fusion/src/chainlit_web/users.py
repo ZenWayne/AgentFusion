@@ -18,7 +18,8 @@ from schemas.group_chat import GroupChatType as GroupChatTypeEnum
 from schemas.config_type import AgentConfigType
 from autogen_agentchat.teams import BaseGroupChat
 from chainlit_web.ui_hook.ui_select_group_chat import UIGroupChatBuilder
-from chainlit_web.ui_hook.autogen_chat_queue import AutoGenAgentChatQueue
+from chainlit_web.ui_hook.ui_agent_builder import UIAgentBuilder
+from agents.codeagent import CodeAgent
 from autogen_core import CancellationToken
 from chainlit.user_session import UserSession
 from chainlit.context import context
@@ -40,20 +41,7 @@ MODEL_WIDGET_ID = "Model"  # 常量定义
 ComponentConfigTypes = Union[ComponentInfo, AgentConfigType]
 InputFuncType = Optional[Callable[[str], Awaitable[str]]]
 
-class UIAgentBuilder:
-    """Builder for single agent mode with queue interface"""
-    
-    def __init__(self, data_layer: AgentFusionDataLayer, input_func: InputFuncType = None):
-        self.data_layer = data_layer
-        self.input_func = input_func
-        
-    @asynccontextmanager
-    async def build_with_queue(self, agent_info: AgentConfigType):
-        """Build an agent and wrap it in AutoGenAgentChatQueue"""
-        agent_builder = AgentBuilder(input_func=self.input_func)
-        async with agent_builder.build(agent_info) as agent:
-            queue = AutoGenAgentChatQueue(agent)
-            yield queue
+# UIAgentBuilder moved to chainlit_web.ui_hook.ui_agent_builder
 
 # @dataclass
 # class ChatProfile(cl.ChatProfile):
@@ -107,7 +95,7 @@ class UserSessionManager:
         return self.model_list
 
 
-
+#CR write test for this class' interface
 class User(UserSessionData, UserSession):
     """
     Manages user session data and provides methods for handling dynamic objects
@@ -228,6 +216,7 @@ class User(UserSessionData, UserSession):
             # Single agent modes - wrapped in queue interface
             AgentType.ASSISTANT_AGENT: UIAgentBuilder(data_layer=data_layer, input_func=wrap_input).build_with_queue,
             AgentType.USER_PROXY_AGENT: UIAgentBuilder(data_layer=data_layer, input_func=wrap_input).build_with_queue,
+            AgentType.CODE_AGENT: UIAgentBuilder(data_layer=data_layer, input_func=wrap_input).build_with_queue,
             # Group chat modes
             GroupChatTypeEnum.SELECTOR_GROUP_CHAT: UIGroupChatBuilder(data_layer=data_layer, input_func=wrap_input).build_with_queue,
             GroupChatTypeEnum.ROUND_ROBIN_GROUP_CHAT: UIGroupChatBuilder(data_layer=data_layer, input_func=wrap_input).build_with_queue,
@@ -252,7 +241,7 @@ class User(UserSessionData, UserSession):
             component_queue : BaseChatQueue = await async_context.__aenter__()
             self.cancellation_token = self.set("cancellation_token", CancellationToken())
             await component_queue.start(cancellation_token=self.cancellation_token)
-            self.current_component_queue = component_queue
+            self.set("current_component_queue", component_queue)
                 
         except Exception as e:
             logger.error(f"Error in setup_new_component: {e}")
@@ -261,13 +250,9 @@ class User(UserSessionData, UserSession):
     async def chat(self, message: cl.Message):
         """Handle incoming chat message"""
         try:
-            component_queue : BaseChatQueue = self.current_component_queue
+            component_queue : BaseChatQueue = self.get("current_component_queue")
             if component_queue:
-                # Process the message through the queue and handle responses
-                async for event in component_queue.push(message.content):
-                    # Handle different types of events
-                    if hasattr(event, 'content'):
-                        await cl.Message(content=str(event.content)).send()
+                await component_queue.push(message.content)
             else:
                 logger.error("Component queue not available")
                 

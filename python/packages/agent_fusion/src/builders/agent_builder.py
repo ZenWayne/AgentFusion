@@ -3,14 +3,15 @@ from base.utils import get_prompt, parse_cwd_placeholders
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
 from agents.codeagent import CodeAgent
 from schemas.component import ComponentInfo
-from schemas.agent import AssistantAgentConfig, UserProxyAgentConfig, AgentType, InputFuncType
+from schemas.agent import AssistantAgentConfig, UserProxyAgentConfig, AgentType as AgentTypeEnum, InputFuncType
+from schemas.agent_type import AgentType, TypedAssistantAgent, TypedUserProxyAgent, TypedCodeAgent
 from builders.model_builder import ModelClientBuilder
 from model_client import ModelClient
 from autogen_ext.tools.mcp import mcp_server_tools, McpServerParams
 from autogen_ext.tools.mcp import StdioMcpToolAdapter, SseMcpToolAdapter
 from .utils import AgentInfo
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Callable, Awaitable
+from typing import AsyncGenerator, Callable, Awaitable, Type
 from autogen_core.memory import ListMemory
 from autogen_agentchat.base import Handoff
 from autogen_ext.tools.mcp import McpWorkbench
@@ -33,55 +34,80 @@ class AgentBuilder:
             raise ValueError(f"Agent config not found for name: {name}")
         return AgentInfo[name]
 
+    def _agent_chat_map(self, agent_type_enum: AgentTypeEnum) -> Type[AgentType]:
+        """Map agent type enum to typed agent class"""
+        return {
+            AgentTypeEnum.ASSISTANT_AGENT: TypedAssistantAgent,
+            AgentTypeEnum.USER_PROXY_AGENT: TypedUserProxyAgent,
+            AgentTypeEnum.CODE_AGENT: TypedCodeAgent,
+        }[agent_type_enum]
+
     @asynccontextmanager
     async def build(self, agent_info: AssistantAgentConfig| UserProxyAgentConfig) -> AsyncGenerator[AssistantAgent | UserProxyAgent, None]:
+        # Use dynamic class mapping for type-safe agent creation
+        agent_class = self._agent_chat_map(agent_info.type)
         user_memory = ListMemory()
-        if agent_info.type == AgentType.CODE_AGENT:
-            async with AsyncExitStack() as stack:
+        model_client_builder: ModelClientBuilder = self.model_client_builder()
+        if agent_info.type == AgentTypeEnum.CODE_AGENT:
+            tools = []
+            # Handle MCP tools if they exist
+            if agent_info.mcp_tools:
                 for mcp_server in agent_info.mcp_tools:
                     for idx, arg in enumerate(mcp_server.args):
                         mcp_server.args[idx] = parse_cwd_placeholders(arg)
-                tools = await asyncio.gather(
+                mcp_tools = await asyncio.gather(
                     *[mcp_server_tools_with_type(mcp_server) 
                     for mcp_server in agent_info.mcp_tools]
                 )
                 # Flatten the list of lists
-                tools = [tool for sublist in tools for tool in sublist]
-                if agent_info.user_handoff_message is not None:
-                    tools += [HandoffWithType(target="user", message=agent_info.user_handoff_message).handoff_tool]
-                model_client_builder: ModelClientBuilder = self.model_client_builder()
-                model_client_config = model_client_builder.get_component_by_name(agent_info.model_client)
-                async with model_client_builder.build(model_client_config) as model_client:
-                    #TODO add the hard coded fields to config 
-                    agent = CodeAgent(
-                        name=agent_info.name,
-                        workbench=[StaticStreamWorkbench(tools=tools)],
-                        model_client=model_client,
-                        model_context=self._context,
-                        system_message=agent_info.prompt(),
-                        output_content_type=None,
-                        output_content_type_format=None,
-                        max_tool_iterations=10,
-                    )
-                    agent.component_label = agent_info.name
-                    yield agent
-        elif agent_info.type == AgentType.ASSISTANT_AGENT:
-            model_client_builder: ModelClientBuilder = self.model_client_builder()
+                tools = [tool for sublist in mcp_tools for tool in sublist]
+            
+            # Add handoff tools if defined
+            if agent_info.handoff_tools:
+                for handoff_tool in agent_info.handoff_tools:
+                    tools += [HandoffWithType(target=handoff_tool.target, message=handoff_tool.message).handoff_tool]
+            model_client_config = model_client_builder.get_component_by_name(agent_info.model_client)
+            async with model_client_builder.build(model_client_config) as model_client:
+                workbench = [StaticStreamWorkbench(tools=tools)] if tools else None
+                agent = agent_class(
+                    name=agent_info.name,
+                    workbench=workbench,
+                    model_client=model_client,
+                    model_context=self._context,
+                    system_message=agent_info.prompt(),
+                    output_content_type=None,
+                    output_content_type_format=None,
+                    max_tool_iterations=10,
+                )
+                agent.component_label = agent_info.name
+                yield agent
+        elif agent_info.type == AgentTypeEnum.ASSISTANT_AGENT:
             model_client_config = model_client_builder.get_component_by_name(agent_info.model_client)
             async with model_client_builder.build(model_client_config) as model_client:
                 agent_tools = []
-                try:
-                    for mcp_server in agent_info.mcp_tools:
-                        for idx, arg in enumerate(mcp_server.args):
-                            mcp_server.args[idx] = parse_cwd_placeholders(arg)
-                        tools : list[StdioMcpToolAdapter | SseMcpToolAdapter] = await mcp_server_tools(mcp_server)
-                        for tool in tools:
-                            tool.component_label = tool.name
-                        agent_tools.extend(tools)
-                except Exception as e:
-                    print(f"Error fetching agent tools: {e}")
+                # Handle MCP tools if they exist
+                if agent_info.mcp_tools:
+                    try:
+                        for mcp_server in agent_info.mcp_tools:
+                            for idx, arg in enumerate(mcp_server.args):
+                                mcp_server.args[idx] = parse_cwd_placeholders(arg)
+                            tools : list[StdioMcpToolAdapter | SseMcpToolAdapter] = await mcp_server_tools(mcp_server)
+                            for tool in tools:
+                                tool.component_label = tool.name
+                            agent_tools.extend(tools)
+                    except Exception as e:
+                        print(f"Error fetching agent tools: {e}")
                 prompt = agent_info.prompt()
-                agent = AssistantAgent(
+                # Build handoffs from handoff_tools
+                handoffs = []
+                if agent_info.handoff_tools:
+                    for handoff_tool in agent_info.handoff_tools:
+                        handoffs.append(HandoffWithType(target=handoff_tool.target, message=handoff_tool.message))
+                else:
+                    # Default handoff to user if none specified
+                    handoffs = [HandoffWithType(target="user", message="Transfer to user.")]
+                
+                agent = agent_class(
                     name=agent_info.name,
                     model_client=model_client,
                     model_client_stream=True,
@@ -89,22 +115,14 @@ class AgentBuilder:
                     tools=agent_tools,
                     description=agent_info.description,
                     memory=[user_memory],
-                    #TODO: read handoff from agent_info and add example in config.json(based on file_system agent)
-                    handoffs=[HandoffWithType(target="user", message="Transfer to user.")],
+                    handoffs=handoffs,
                     max_tool_iterations=10
                 )
                 agent.component_label = agent_info.name
                 yield agent
 
-        elif agent_info.type == AgentType.USER_PROXY_AGENT:
-            agent = UserProxyAgent(
-                name=agent_info.name,
-                input_func=self._input_func
-            )
-            agent.component_label = agent_info.name
-            yield agent
-        elif agent_info.type == AgentType.CODE_AGENT:
-            agent = CodeAgent(
+        elif agent_info.type == AgentTypeEnum.USER_PROXY_AGENT:
+            agent = agent_class(
                 name=agent_info.name,
                 input_func=self._input_func
             )

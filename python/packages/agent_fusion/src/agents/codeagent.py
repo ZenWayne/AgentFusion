@@ -8,7 +8,16 @@ import uuid
 
 from autogen_agentchat.agents import BaseChatAgent
 from autogen_agentchat.base import Response, TaskResult
-from autogen_agentchat.messages import BaseAgentEvent, BaseChatMessage, TextMessage, ToolCallRequestEvent, ToolCallExecutionEvent, HandoffMessage, StructuredMessage
+from autogen_agentchat.messages import (
+    BaseAgentEvent, 
+    BaseChatMessage, 
+    TextMessage, 
+    ToolCallRequestEvent, 
+    ToolCallExecutionEvent, 
+    HandoffMessage, 
+    StructuredMessage,
+    ToolCallSummaryMessage
+)
 from autogen_core.models import (
     AssistantMessage,
     ChatCompletionClient,
@@ -33,6 +42,7 @@ from typing import Any
 import warnings
 from autogen_core.tools import ToolResult, StaticStreamWorkbench
 from agents.handoff import HandoffType
+from contextlib import asynccontextmanager
 
 
 event_logger = logging.getLogger(EVENT_LOGGER_NAME)
@@ -66,13 +76,31 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         self._output_content_type_format = output_content_type_format
         self._max_tool_iterations = max_tool_iterations
         self._is_running = False
-        self._cancellation_token = CancellationToken()
+        self._cancellation_token: CancellationToken |None = None
         self._reflect_on_tool_use = False
         self._handoff_tool_name : set[str] | None = None
-        
+
     @property
     def produced_message_types(self) -> Sequence[type[BaseChatMessage]]:
-        return (TextMessage,)
+        """Get the types of messages this agent can produce.
+
+        Returns:
+            Sequence of message types this agent can generate
+        """
+        types: List[type[BaseChatMessage]] = [TextMessage, ToolCallSummaryMessage, HandoffMessage]
+        if self._structured_message_factory is not None:
+            types.append(StructuredMessage)
+        return types
+
+    async def start(self, cancellation_token: CancellationToken | None = None, output_task_messages: bool = True):
+        """Start the agent chat session"""
+        if self._is_running:
+            raise ValueError("The agent chat is already running.")
+        
+        if cancellation_token is not None:
+            self._cancellation_token = cancellation_token
+            
+        self._is_running = True
 
     async def update_context(self, new_messages: List[LLMMessage] = None) -> None:
         """Update context with history messages, ensuring system message is at the front"""        
@@ -82,10 +110,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                 await self._model_context.add_message(msg)
 
     async def push(self, messages: Union[str, List[LLMMessage]]) -> AsyncGenerator[BaseAgentEvent | BaseChatMessage | TaskResult, None]:
-        """Push interface to accept new messages with context caching"""
-        output_messages: List[BaseAgentEvent | BaseChatMessage] = []
-        stop_reason: str | None = None
-        
+        """Push interface to accept new messages with context caching"""        
         try:
             # Handle both string and List[LLMMessage] input
             if isinstance(messages, str):
@@ -95,23 +120,10 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             else:
                 messages_to_process = messages
             
-            # Update context with new messages
-            await self.update_context(messages_to_process)
-            
             # Process through on_messages_stream
-            async for result in self.on_messages_stream(messages_to_process, CancellationToken()):
+            async for result in self.on_messages_stream(messages_to_process, self._cancellation_token):
                 # Dispatch the event to appropriate handler
                 await self._dispatch_message(result)
-                yield result
-                
-                # Add to output messages (skip streaming chunks)
-                if not isinstance(result, ModelClientStreamingChunkEvent):
-                    output_messages.append(result)
-                
-                # Check if this is a TaskResult (final result)
-                if isinstance(result, TaskResult):
-                    await self.task_finished(result)
-                    break
                     
         except Exception as e:
             # Handle any errors during message processing
@@ -123,6 +135,8 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             await self.handle_task_result(message)
         elif isinstance(message, Response):
             await self.handle_response(message)
+        elif isinstance(message, ModelClientStreamingChunkEvent):
+            await self.handle_streaming_chunk(message)
         elif isinstance(message, BaseAgentEvent):
             await self.handle_agent_event(message)
         elif isinstance(message, BaseChatMessage):
@@ -144,6 +158,10 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
     
     async def handle_chat_message(self, message: BaseChatMessage) -> None:
         """Handle BaseChatMessage messages"""
+        pass
+    
+    async def handle_streaming_chunk(self, message: ModelClientStreamingChunkEvent) -> None:
+        """Handle ModelClientStreamingChunkEvent messages"""
         pass
     
     async def handle_unknown_message(self, message) -> None:

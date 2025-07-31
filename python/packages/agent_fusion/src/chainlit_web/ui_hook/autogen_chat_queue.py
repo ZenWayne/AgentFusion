@@ -16,10 +16,11 @@ from autogen_agentchat.teams._group_chat._events import (
 )
 from schemas.group_chat_type import GroupChatType
 from base.groupchat_queue import BaseChatQueue
+from agents.codeagent import CodeAgent
 
 T = TypeVar('T', bound=BaseGroupChat)
 # Type alias for supported agent types
-AgentTypes = Union[AssistantAgent, UserProxyAgent]
+AgentTypes = Union[AssistantAgent, UserProxyAgent, CodeAgent]
 
 class AutoGenGroupChatQueue(BaseChatQueue, Generic[T]):
     """AutoGen GroupChat Queue using inheritance instead of composition"""
@@ -183,7 +184,7 @@ class AutoGenGroupChatQueue(BaseChatQueue, Generic[T]):
         pass
 
 
-class AutoGenAgentChatQueue(BaseChatQueue):
+class AutoGenAgentChatQueue(CodeAgent):
     """Single agent chat queue implementation with run_stream support"""
     
     def __init__(self, agent_instance: AgentTypes):
@@ -206,39 +207,6 @@ class AutoGenAgentChatQueue(BaseChatQueue):
             yield None
         finally:
             self._is_running = False
-
-    async def push(self, messages: Union[str, List[LLMMessage]]) -> AsyncGenerator[BaseAgentEvent | BaseChatMessage | TaskResult, None]:
-        """Process message using agent's run_stream and yield results"""
-        if not self._is_running:
-            raise ValueError("Agent chat queue is not running. Call start() first.")
-            
-        try:
-            # Handle both string and List[LLMMessage] input
-            if isinstance(messages, str):
-                task_content = messages
-            else:
-                # Convert LLMMessage list to string
-                task_content = ""
-                for msg in messages:
-                    if hasattr(msg, 'content'):
-                        task_content += str(msg.content) + "\n"
-                task_content = task_content.strip()
-            
-            # Use the agent's run_stream method to process the message
-            async for event in self._agent.run_stream(task=task_content, cancellation_token=self._cancellation_token):
-                # Dispatch the event to appropriate handler
-                await self._dispatch_message(event)
-                yield event
-                
-                # Check if this is a TaskResult (final result)
-                if isinstance(event, TaskResult):
-                    await self.task_finished(event)
-                    break
-                    
-        except Exception as e:
-            # Handle any errors during message processing
-            raise RuntimeError(f"Error processing message in agent: {str(e)}") from e
-    
     async def _dispatch_message(self, message: BaseAgentEvent | BaseChatMessage | TaskResult) -> None:
         """Dispatch message to appropriate handler based on type"""
         if isinstance(message, TaskResult):

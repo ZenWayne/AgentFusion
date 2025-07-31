@@ -255,6 +255,7 @@ CREATE TABLE agents (
     agent_type VARCHAR(50) DEFAULT 'assistant_agent',
     labels TEXT[] DEFAULT '{}',
     input_func VARCHAR(50) DEFAULT 'input',
+    handoff_tools JSONB DEFAULT '[]', -- JSON array of handoff tools
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by INTEGER REFERENCES "User"(id),
@@ -705,10 +706,10 @@ INSERT INTO model_clients (label, provider, component_type_id, description, mode
      '{"vision": false, "function_calling": true, "json_output": true, "family": "r1"}'::jsonb, 1);
 
 -- Insert sample agents
-INSERT INTO agents (name, label, provider, component_type_id, description, model_client_id, agent_type, labels, input_func, created_by) VALUES 
-    ('prompt_refiner', 'prompt_refiner', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 'assistant_agent', ARRAY['prompt', 'refiner'], 'input', 1),
-    ('executor', 'executor', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 'assistant_agent', ARRAY['executor', 'action'], 'input', 1),
-    ('user', 'UserProxyAgent', 'autogen_agentchat.agents.UserProxyAgent', 1, 'A human user', 1, 'user_proxy_agent', ARRAY['user', 'proxy'], 'input', 1);
+INSERT INTO agents (name, label, provider, component_type_id, description, model_client_id, agent_type, labels, input_func, handoff_tools, created_by) VALUES 
+    ('prompt_refiner', 'prompt_refiner', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 'assistant_agent', ARRAY['prompt', 'refiner'], 'input', '[]'::jsonb, 1),
+    ('executor', 'executor', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 'assistant_agent', ARRAY['executor', 'action'], 'input', '[]'::jsonb, 1),
+    ('assistant_agent', 'assistant_agent', 'autogen_agentchat.agents.AssistantAgent', 1, '重构后的assistant_agent', 1, 'code_agent', ARRAY['agent', 'code_execution', 'python', 'development'], 'input', '[{"target": "user", "message": "Transfer to user"}]'::jsonb, 1);
 
 -- Insert sample MCP servers based on config.json
 INSERT INTO mcp_servers (name, command, args, env, url, timeout, sse_read_timeout, description, created_by) VALUES 
@@ -728,7 +729,8 @@ INSERT INTO agent_mcp_servers (agent_id, mcp_server_id, created_by) VALUES
     (1, 3, 1), -- prompt_refiner uses file_system
     (2, 1, 1), -- executor uses file_system_windows
     (2, 2, 1), -- executor uses file_system_unix
-    (2, 3, 1); -- executor uses file_system
+    (2, 3, 1), -- executor uses file_system
+    (3, 3, 1); -- assistant_agent uses file_system
 
 -- Insert sample group chats based on config.json
 INSERT INTO group_chats (name, type, description, labels, selector_prompt, model_client, created_by) VALUES 
