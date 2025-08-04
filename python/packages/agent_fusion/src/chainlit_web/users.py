@@ -218,8 +218,8 @@ class User(UserSessionData, UserSession):
             AgentType.USER_PROXY_AGENT: UIAgentBuilder(data_layer=data_layer, input_func=wrap_input).build_with_queue,
             AgentType.CODE_AGENT: UIAgentBuilder(data_layer=data_layer, input_func=wrap_input).build_with_queue,
             # Group chat modes
-            GroupChatTypeEnum.SELECTOR_GROUP_CHAT: UIGroupChatBuilder(data_layer=data_layer, input_func=wrap_input).build_with_queue,
-            GroupChatTypeEnum.ROUND_ROBIN_GROUP_CHAT: UIGroupChatBuilder(data_layer=data_layer, input_func=wrap_input).build_with_queue,
+            GroupChatTypeEnum.SELECTOR_GROUP_CHAT: UIGroupChatBuilder(data_layer=data_layer).build_with_queue,
+            GroupChatTypeEnum.ROUND_ROBIN_GROUP_CHAT: UIGroupChatBuilder(data_layer=data_layer).build_with_queue,
         }
         async_context = factory_map[component_info.type](component_info)
         return async_context

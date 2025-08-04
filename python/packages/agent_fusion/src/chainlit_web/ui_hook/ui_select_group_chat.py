@@ -247,10 +247,9 @@ class UIAutoGenGroupChatQueue(AutoGenGroupChatQueue[T]):
 class UIGroupChatBuilder(GroupChatBuilderBase):
     def __init__(self, 
                  data_layer: AgentFusionDataLayer,
-                 input_func: Callable[[str], Awaitable[str]] | None = input, 
                  model_client_streaming: bool = True
         ):
-        super().__init__(input_func)
+        super().__init__()
         self._model_client_streaming = model_client_streaming
         self._data_layer = data_layer
 

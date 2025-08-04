@@ -11,14 +11,15 @@ class InputFuncType(str, Enum):
 
 class AgentType(str, Enum):
     ASSISTANT_AGENT = "assistant_agent"
+    """deprecated now moved to code_agent"""
     USER_PROXY_AGENT = "user_proxy_agent"
     CODE_AGENT = "code_agent"
 
 class HandoffTools(BaseModel):
-    "the target to be handed off"
     target :str
-    "instruct message for inspiring llm model to handoff control"
+    "the target to be handed off"
     message: str
+    "instruct message for inspiring llm model to handoff control"
     
 
 class BaseAgentConfig(BaseModel):

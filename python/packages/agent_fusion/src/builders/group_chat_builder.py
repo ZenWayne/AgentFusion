@@ -26,11 +26,8 @@ from abc import ABC, abstractmethod
 from base.groupchat_queue import BaseChatQueue
 
 class GroupChatBuilder:
-    def __init__(
-        self,
-        input_func: Callable[[str], Awaitable[str]] | None = None
-    ):
-        self._input_func: Callable[[str], Awaitable[str]] | None = input_func
+    def __init__(self):
+        pass
 
     def agent_builder(self) -> AgentBuilder:
         return AgentBuilder()

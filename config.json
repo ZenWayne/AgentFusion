@@ -140,7 +140,7 @@
                     "message": "Transfer to user"
                 }
             ],
-            "mcp_tools": ["file_system"]
+            "mcp_tools": []
         }
     },
     "group_chats": {

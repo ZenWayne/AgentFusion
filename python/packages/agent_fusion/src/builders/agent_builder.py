@@ -17,8 +17,9 @@ from autogen_agentchat.base import Handoff
 from autogen_ext.tools.mcp import McpWorkbench
 from autogen_core.model_context import ChatCompletionContext
 from contextlib import AsyncExitStack
-from agents.handoff import HandoffWithType, mcp_server_tools_with_type
-from autogen_core.tools import StaticStreamWorkbench
+from tools.handoff import HandoffWithType
+from tools.workbench import VectorStreamWorkbench
+from tools.retrieve import retrieve_filesystem_tool
 
 class AgentBuilder:
     def __init__(self, input_func: Callable[[str], Awaitable[str]] | None = input, context: ChatCompletionContext | None = None):
@@ -56,19 +57,21 @@ class AgentBuilder:
                     for idx, arg in enumerate(mcp_server.args):
                         mcp_server.args[idx] = parse_cwd_placeholders(arg)
                 mcp_tools = await asyncio.gather(
-                    *[mcp_server_tools_with_type(mcp_server) 
+                    *[mcp_server_tools(mcp_server) 
                     for mcp_server in agent_info.mcp_tools]
                 )
                 # Flatten the list of lists
                 tools = [tool for sublist in mcp_tools for tool in sublist]
+
             
             # Add handoff tools if defined
             if agent_info.handoff_tools:
                 for handoff_tool in agent_info.handoff_tools:
                     tools += [HandoffWithType(target=handoff_tool.target, message=handoff_tool.message).handoff_tool]
+            tools.append(retrieve_filesystem_tool())
             model_client_config = model_client_builder.get_component_by_name(agent_info.model_client)
             async with model_client_builder.build(model_client_config) as model_client:
-                workbench = [StaticStreamWorkbench(tools=tools)] if tools else None
+                workbench = [VectorStreamWorkbench(tools=tools)] if tools else None
                 agent = agent_class(
                     name=agent_info.name,
                     workbench=workbench,

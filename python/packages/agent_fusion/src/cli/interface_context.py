@@ -72,6 +72,7 @@ class SqlCommentExtractor:
         if not self.db_layer:
             raise ValueError("Database layer not initialized")
         
+        #CR use orm to rewrite, you need
         base_query = """
         SELECT 
             t.table_name,
@@ -230,15 +231,23 @@ async def sql_interface_context(database_url: Optional[str] = None, db_layer: Op
         if database_url:
             db = DBDataLayer(database_url)
         else:
-            db = AgentFusionDataLayer()
+            db = AgentFusionDataLayer(database_url)
         
         await db.connect()
-        try:
-            extractor = SqlCommentExtractor(db)
-            yield extractor
-        finally:
-            await db.close()
 
+        extractor = SqlCommentExtractor(db)
+        yield extractor
+
+async def main():
+   import os
+   async with sql_interface_context(database_url = os.getenv("DATABASE_URL")) as extractor:
+        table_comments = await extractor.fetch_table_comments_from_db()
+        print(table_comments)
+
+if __name__ == '__main__':
+    import asyncio
+    asyncio.run(main())
+    #python -m cli.interface_context
 
 # Usage examples:
 # 1. Extract comments from SQL string:

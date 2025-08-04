@@ -33,6 +33,7 @@ from autogen_core import FunctionCall
 from autogen_core.model_context import ChatCompletionContext, UnboundedChatCompletionContext
 from autogen_agentchat.utils import remove_images
 from pydantic import BaseModel
+from tools.workbench import VectorStreamWorkbench
 
 from base.groupchat_queue import BaseChatQueue
 from autogen_agentchat import EVENT_LOGGER_NAME, TRACE_LOGGER_NAME
@@ -41,7 +42,7 @@ import json
 from typing import Any
 import warnings
 from autogen_core.tools import ToolResult, StaticStreamWorkbench
-from agents.handoff import HandoffType
+from base.handoff import ToolType
 from contextlib import asynccontextmanager
 
 
@@ -172,6 +173,16 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         """Handle task completion"""
         self._is_running = False
 
+    async def _get_tools_from_workbench(self, messages: list[LLMMessage]):
+        """Get tools from workbench"""
+        tools = []
+        for wb in self._workbench:
+            if isinstance(wb, VectorStreamWorkbench):
+                tools.extend(wb.get_tools_for_context(messages))
+            else:
+                tools.extend(await wb.list_tools())
+        return tools
+
     async def on_messages_stream(
         self, messages: Sequence[BaseChatMessage], cancellation_token: CancellationToken
     ) -> AsyncGenerator[BaseAgentEvent | BaseChatMessage | Response, None]:
@@ -186,12 +197,13 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         llm_messages = await self._get_compatible_context(self._model_client, self._model_context)
 
         #TODO get tools based on context
-        tools = [tool for wb in self._workbench for tool in await wb.list_tools()]
+        tools =await self._get_tools_from_workbench(llm_messages)
+
         if not self._handoff_tool_name:
             self._handoff_tool_name = { 
                 tool["name"] for wb in self._workbench 
                 for tool in await wb.list_tools() 
-                if tool.get("type", None) == HandoffType.HANDOFF_TOOL }
+                if tool.get("type", None) == ToolType.HANDOFF_TOOL }
 
         async for create_result_or_stream_event in self._call_llm(message_id, llm_messages, tools, cancellation_token):
             if isinstance(create_result_or_stream_event, CreateResult):
@@ -268,6 +280,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                     return
             
             llm_messages = await self._get_compatible_context(self._model_client, self._model_context)
+            tools =await self._get_tools_from_workbench(llm_messages)
             async for create_result_or_stream_event in self._call_llm(message_id, llm_messages, tools, cancellation_token):
                 if isinstance(create_result_or_stream_event, CreateResult):
                     model_result = create_result_or_stream_event

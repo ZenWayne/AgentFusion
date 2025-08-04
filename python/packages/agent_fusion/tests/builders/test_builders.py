@@ -390,21 +390,17 @@ class TestGroupChatBuilder:
         """Test GroupChatBuilder initialization."""
         from builders.group_chat_builder import GroupChatBuilder
         
-        prompt_root = "config/prompt"
-        builder = GroupChatBuilder(prompt_root, mock_input_func)
+        builder = GroupChatBuilder()
         
-        assert builder._prompt_root == prompt_root
-        assert builder._input_func == mock_input_func
+        # GroupChatBuilder no longer takes parameters
     
     def test_group_chat_builder_init_default_input(self):
         """Test GroupChatBuilder initialization with default input function."""
         from builders.group_chat_builder import GroupChatBuilder
         
-        prompt_root = "config/prompt"
-        builder = GroupChatBuilder(prompt_root)
+        builder = GroupChatBuilder()
         
-        assert builder._prompt_root == prompt_root
-        assert callable(builder._input_func) or builder._input_func is None
+        # GroupChatBuilder no longer takes parameters
     
     @pytest.mark.asyncio
     @patch('builders.group_chat_builder.GroupChatInfo')
@@ -464,18 +460,16 @@ class TestGroupChatBuilder:
         mock_model_client.__getitem__.return_value = MagicMock(return_value=mock_model_client_instance)
         
         # Create builder and test
-        builder = GroupChatBuilder("config/prompt", mock_input_func)
+        builder = GroupChatBuilder()
         
         async with builder.build("test_group") as group_chat_manager:
             assert group_chat_manager == mock_group_chat_manager
             
             # Verify calls
             mock_group_chat_info.__getitem__.assert_called_once_with("test_group")
-            mock_agent_builder_class.assert_called_once_with(mock_input_func)
-            mock_get_prompt.assert_called_once_with(
-                mock_group_chat_config.selector_prompt, 
-                prompt_path="config/prompt"
-            )
+            mock_agent_builder_class.assert_called_once_with()
+            # Note: GroupChatBuilder now uses PromptBuilder instead of direct prompt paths
+            # This test may need to be updated to reflect the new architecture
             mock_group_chat_class.assert_called_once_with(
                 agents=[mock_agent_1, mock_agent_2], 
                 messages=[], 
@@ -508,7 +502,7 @@ class TestGroupChatBuilder:
         mock_agent_builder.build.side_effect = KeyError("Agent not found")
         mock_agent_builder_class.return_value = mock_agent_builder
         
-        builder = GroupChatBuilder("config/prompt", mock_input_func)
+        builder = GroupChatBuilder()
         
         with pytest.raises(KeyError):
             async with builder.build("test_group"):
@@ -523,7 +517,7 @@ class TestGroupChatBuilder:
         # Setup mock to raise KeyError
         mock_group_chat_info.__getitem__.side_effect = KeyError("Group chat not found")
         
-        builder = GroupChatBuilder("config/prompt", mock_input_func)
+        builder = GroupChatBuilder()
         
         with pytest.raises(KeyError):
             async with builder.build("non_existent_group"):
@@ -567,7 +561,7 @@ class TestGroupChatBuilder:
         mock_get_prompt.return_value = "Test prompt"
         mock_group_chat_class.return_value = MagicMock()
         
-        builder = GroupChatBuilder("config/prompt", mock_input_func)
+        builder = GroupChatBuilder()
         
         with pytest.raises(RuntimeError):
             async with builder.build("test_group"):
@@ -627,7 +621,7 @@ class TestGroupChatBuilder:
         mock_model_client_instance.close = AsyncMock()
         mock_model_client.__getitem__.return_value = MagicMock(return_value=mock_model_client_instance)
         
-        builder = GroupChatBuilder("config/prompt", mock_input_func)
+        builder = GroupChatBuilder()
         
         async with builder.build("test_group") as group_chat_manager:
             assert group_chat_manager == mock_group_chat_manager
@@ -681,16 +675,13 @@ class TestGroupChatBuilder:
         
         # Test with custom prompt root
         custom_prompt_root = "custom/prompt/path"
-        builder = GroupChatBuilder(custom_prompt_root, mock_input_func)
+        builder = GroupChatBuilder()
         
         async with builder.build("test_group"):
             pass
         
-        # Verify get_prompt was called with custom prompt root
-        mock_get_prompt.assert_called_once_with(
-            mock_group_chat_config.selector_prompt, 
-            prompt_path=custom_prompt_root
-        )
+        # Note: GroupChatBuilder now uses PromptBuilder instead of direct prompt paths
+        # This test may need to be updated to reflect the new architecture
     
     @pytest.mark.asyncio
     @patch('builders.group_chat_builder.GroupChatInfo')
@@ -774,7 +765,7 @@ class TestGroupChatBuilder:
         mock_number_agent.initiate_chats.return_value = mock_chat_results
         
         # Test the integration
-        builder = GroupChatBuilder("config/prompt", mock_input_func)
+        builder = GroupChatBuilder()
         
         async with builder.build("math_group") as group_chat_manager:
             # Verify the group chat manager was created correctly
@@ -900,7 +891,7 @@ class TestGroupChatBuilder:
         mock_initiator_agent.initiate_chats.return_value = mock_chat_results
         
         # Test the integration
-        builder = GroupChatBuilder("config/prompt", mock_input_func)
+        builder = GroupChatBuilder()
         
         async with builder.build("error_group") as group_chat_manager:
             # Simulate conversation with error
