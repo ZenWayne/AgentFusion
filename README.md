@@ -1,15 +1,17 @@
 # AgentFusion
 
-A powerful multi-agent orchestration framework built on ag2. AgentFusion enables you to create, configure, and deploy complex AI agent workflows through three distinct interaction patterns: individual agents, group chats, and graph flows.
+A comprehensive AI agent management platform that provides multi-agent orchestration, agent building tools, prompt version management, and real-time chat interface. AgentFusion enables you to create, configure, and deploy AI agents through individual agents, group chats, and graph flows with a complete backend infrastructure.
 
 ## 🌟 Features
 
 - **Multi-Agent Orchestration**: Deploy individual agents, group chats, or complex graph flows
-- **Flexible Configuration**: JSON-based configuration system for agents, workflows, and integrations
-- **Web Interface**: Chainlit-powered web UI for interactive agent conversations
+- **Database Infrastructure**: PostgreSQL with SQLAlchemy ORM for persistent data storage
+- **User Authentication**: Complete user management with bcrypt password hashing and activity logging
+- **Web Interface**: Chainlit-powered real-time chat interface with WebSocket support
 - **MCP Integration**: Model Context Protocol support for external tool integration
-- **Prompt Engineering**: Built-in agents for prompt optimization and specialization
-- **File System Operations**: MCP-enabled file system agent for document management
+- **Prompt Management**: Version-controlled prompt system with built-in optimization agents
+- **Activity Logging**: Comprehensive audit trail for all user actions and system events
+- **Flexible Configuration**: JSON-based configuration system for agents, workflows, and integrations
 
 ## 🚀 Quick Start
 
@@ -28,7 +30,17 @@ cd python/packages/agent_fusion
 uv pip install -e .
 ```
 
-### 2. Environment Setup
+### 2. Database Setup
+
+```bash
+# Set up PostgreSQL database (production)
+# Or use SQLite for testing - automatically configured
+
+# Run database migrations if needed
+# Database schema is located in sql/progresdb.sql
+```
+
+### 3. Environment Setup
 
 Create a `.env` file in the project root with your API keys:
 
@@ -36,9 +48,12 @@ Create a `.env` file in the project root with your API keys:
 DEEPSEEK_API_KEY=your_deepseek_api_key_here
 DASHSCOPE_API_KEY=your_aliyun_api_key_here
 GEMINI_API_KEY=your_google_api_key_here
+
+# Database configuration (optional - defaults to SQLite for testing)
+DATABASE_URL=postgresql://user:password@localhost/agentfusion
 ```
 
-### 3. Launch Web Interface
+### 4. Launch Web Interface
 
 ```bash
 chainlit run python/packages/agent_fusion/src/chainlit_web/run.py
@@ -58,16 +73,41 @@ AgentFusion/
 │   └── mem/                         # Memory configurations
 ├── python/packages/agent_fusion/    # Main Python package
 │   └── src/
-│       ├── schemas/                 # Pydantic data models (formerly dataclass)
+│       ├── data_layer/              # Database layer with SQLAlchemy ORM
+│       │   ├── models/              # Business logic models
+│       │   └── tables/              # Database table definitions
+│       ├── schemas/                 # Pydantic data models
 │       ├── builders/                # Core builders for agents/workflows
-│       ├── chainlit_web/            # Web interface
+│       ├── chainlit_web/            # Web interface with user authentication
+│       │   ├── user/                # User management and authentication
+│       │   └── ui_hook/             # UI integration hooks
 │       ├── model_client/            # Model client implementations
 │       ├── base/                    # Base utilities and MCP support
+│       ├── tools/                   # Agent tools and utilities
 │       └── dump/                    # Configuration export utilities
+├── sql/                            # Database schema and migration scripts
 ├── config.json                     # Main configuration file
 ├── dumped_config/                  # Exported configurations
+├── CLAUDE.md                       # Project memory and guidelines
 └── requirements.txt                # Python dependencies
 ```
+
+## 🏗️ Architecture
+
+### Technology Stack
+- **Backend**: Python 3.11+ with FastAPI + Chainlit
+- **Database**: PostgreSQL (production) / SQLite (testing)
+- **ORM**: SQLAlchemy 2.0 with async support
+- **Authentication**: Custom user authentication with bcrypt
+- **Agent Framework**: AutoGen AgentChat
+- **Frontend**: Chainlit with real-time WebSocket connections
+
+### Database Architecture
+- **User Management**: User accounts, authentication, and activity logging
+- **Agent System**: Agent configurations and model clients
+- **Chat System**: Threads, steps, elements, and feedback
+- **Prompt Management**: Prompts with version control
+- **Audit Trail**: Comprehensive activity logging with JSONB metadata
 
 ## 🤖 Agent Types
 
@@ -161,11 +201,29 @@ dump_group_chats(["prompt_flow"], "dumped_config")
 
 ## 🛠️ Development
 
+### Database Development
+```bash
+# Run tests
+python -m pytest python/packages/agent_fusion/tests/ -v
+
+# Test specific model
+python -m pytest python/packages/agent_fusion/tests/test_user_model.py -v
+```
+
 ### Adding New Agents
 
 1. Create a prompt file in `config/prompt/agent/`
 2. Add agent configuration to `config.json`
-3. Test via the web interface
+3. Update database models if needed (data_layer/models/)
+4. Add tests for new functionality
+5. Test via the web interface
+
+### Database Migrations
+
+1. Update SQL schema in `sql/progresdb.sql`
+2. Update SQLAlchemy models in `data_layer/models/tables/`
+3. Update business logic models in `data_layer/models/`
+4. Add comprehensive tests
 
 ### Custom MCP Tools
 
@@ -198,7 +256,7 @@ MIT License - see LICENSE file for details
 
 ## 🙏 Acknowledgments
 
-Built on top of [ag2](https://github.com/ag2ai/ag2) - an incredible framework for multi-agent AI applications. Special thanks to the ag2 team for their pioneering work in multi-agent orchestration.
+Built on top of [AutoGen](https://github.com/microsoft/autogen) - a powerful framework for multi-agent AI applications. Special thanks to the AutoGen team for their pioneering work in multi-agent orchestration.
 
 ## 📞 Support
 
