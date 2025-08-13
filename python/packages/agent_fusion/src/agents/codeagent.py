@@ -28,7 +28,7 @@ from autogen_core.models import (
 from autogen_agentchat.messages import ModelClientStreamingChunkEvent, ThoughtEvent
 from autogen_core import CancellationToken
 from autogen_core.tools import Workbench, Tool, ToolSchema
-from autogen_core.models import CreateResult, ChatCompletionClient, LLMMessage, SystemMessage
+from autogen_core.models import CreateResult, ChatCompletionClient, LLMMessage, SystemMessage, UserMessage
 from autogen_core import FunctionCall
 from autogen_core.model_context import ChatCompletionContext, UnboundedChatCompletionContext
 from autogen_agentchat.utils import remove_images
@@ -176,9 +176,10 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
     async def _get_tools_from_workbench(self, messages: list[LLMMessage]):
         """Get tools from workbench"""
         tools = []
+        text_messages = [msg for msg in messages if (isinstance(msg, SystemMessage) or isinstance(msg, UserMessage))]
         for wb in self._workbench:
             if isinstance(wb, VectorStreamWorkbench):
-                tools.extend(wb.get_tools_for_context(messages))
+                tools.extend(wb.get_tools_for_context(text_messages))
             else:
                 tools.extend(await wb.list_tools())
         return tools

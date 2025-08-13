@@ -25,18 +25,21 @@ class ShortPathFormatter(logging.Formatter):
         record.pathname = get_short_path(record.pathname)
         # 格式化消息
         formatted_message = super().format(record)
+        # 添加异常堆栈跟踪信息
+        if record.exc_info:
+            formatted_message += '\n' + self.formatException(record.exc_info)
         # 解码Unicode转义序列
         return decode_unicode_escapes(formatted_message)
     
-gobal_log_filterer = logging.StreamHandler()
-gobal_log_filterer.setFormatter(ShortPathFormatter(
+global_log_filterer = logging.StreamHandler()
+global_log_filterer.setFormatter(ShortPathFormatter(
 '%(asctime)s [%(levelname)s] %(pathname)s:%(lineno)d - %(message)s'
 ))
 
 def enable_chainlit_logger(log_level:int=logging.INFO):
     logger = logging.getLogger("chainlit")
     logger.setLevel(log_level)
-    logger.addHandler(gobal_log_filterer)
+    logger.addHandler(global_log_filterer)
 
 
 def enable_autogen_logger(name:list[str], supress_other_level:int=logging.WARNING, filter_types:list[FilterType]=[FilterType.LLMCall]):
@@ -45,13 +48,13 @@ def enable_autogen_logger(name:list[str], supress_other_level:int=logging.WARNIN
 
     # 如果启用LLMCall过滤器，添加到handler
     if len(filter_types)>0:
-        add_filter(gobal_log_filterer, filter_types)
+        add_filter(global_log_filterer, filter_types)
     
     for n in name:
         logger = logging.getLogger(n)
         # 检查是否已经添加了我们的handler，避免重复添加
-        if gobal_log_filterer not in logger.handlers:
-            logger.addHandler(gobal_log_filterer)
+        if global_log_filterer not in logger.handlers:
+            logger.addHandler(global_log_filterer)
         logger.setLevel(logging.INFO)
         # 防止向上传播到根logger（避免重复输出）
         logger.propagate = False

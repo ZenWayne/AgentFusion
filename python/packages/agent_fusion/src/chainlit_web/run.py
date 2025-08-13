@@ -10,7 +10,7 @@ from chainlit_web.user.auth import get_data_layer
 from data_layer.data_layer import database_layer
 from chainlit_web.users import User, UserSessionManager
 from logging import getLogger
-from aglogger.agentgerator_logger import gobal_log_filterer
+from aglogger.agentgerator_logger import global_log_filterer
 
 from schemas.model_info import ModelClientConfig
 

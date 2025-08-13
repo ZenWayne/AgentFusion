@@ -257,7 +257,7 @@ class User(UserSessionData, UserSession):
                 logger.error("Component queue not available")
                 
         except Exception as e:
-            logger.error(f"Error in chat: {e}")
+            logger.exception(f"Error in chat: {e}")
     
     async def cleanup_current_chat(self):
         """Clean up current chat resources"""
