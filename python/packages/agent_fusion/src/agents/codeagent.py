@@ -89,8 +89,8 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             Sequence of message types this agent can generate
         """
         types: List[type[BaseChatMessage]] = [TextMessage, ToolCallSummaryMessage, HandoffMessage]
-        if self._structured_message_factory is not None:
-            types.append(StructuredMessage)
+        # if self._structured_message_factory is not None:
+        #     types.append(StructuredMessage)
         return types
 
     async def start(self, cancellation_token: CancellationToken | None = None, output_task_messages: bool = True):

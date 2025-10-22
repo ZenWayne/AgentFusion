@@ -51,12 +51,13 @@ class VectorStreamWorkbench(StaticStreamWorkbench):
    
     def _get_tools_for_query(self, query: str) -> list[ToolSchema]:        
         # 使用DashScope重排序进行二次排序            
-        reranked_tools = rerank_tools_with_dashscope(
-            query=query,
-            tools=self._tools,
-            top_n=self._top_k
-        )
+        # reranked_tools = rerank_tools_with_dashscope(
+        #     query=query,
+        #     tools=self._tools,
+        #     top_n=self._top_k
+        # )
 
+        reranked_tools = self._tools
         result_schemas: list[ToolSchema] = []
         for tool in reranked_tools:
             original_schema = tool.schema

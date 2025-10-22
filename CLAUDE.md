@@ -235,6 +235,25 @@ These tables exist in SQL schema but lack SQLAlchemy models:
 5. **Activity Logging**: Log significant user actions for audit trail
 6. **Error Handling**: Always use proper session management with rollback
 
+### File Organization and Movement Rules
+
+**MANDATORY REQUIREMENT**: When moving files to new locations, follow these rules:
+1. **Never Update sys.path Directly**: Do not manually modify sys.path in test files after moving them
+2. **Use Relative Imports**: All imports should use proper relative paths from project root
+3. **Update Import References**: Update all import statements in files that reference the moved file(s)
+4. **Maintain Directory Structure**: Follow existing organizational patterns:
+   - `tests/mcp/` for MCP-related tests
+   - `schemas/agents/` for agent-specific schemas
+   - `tests/` for general test files
+5. **Import Path Resolution**: Use installed package imports, not full source paths:
+   - ✅ GOOD: `from agent_fusion_mcp.database_server import DatabaseMCPServer` (recommanded when package is installed)
+   - ✅ GOOD: `from schemas.agents.database_agent import` (when agent_fusion package is installed)
+   - ❌ BAD: `from agent_fusion.src.schemas.agents.database_agent import` (when package is installed)
+   - ❌ BAD: Modifying sys.path to compensate for file location
+   - ❌ BAD: Using relative imports like `from ...import`
+
+   **Rule**: If `agent_fusion` package is installed, use direct imports without `.src` in the path.
+
 ## Contact and Context
 
 This project uses:

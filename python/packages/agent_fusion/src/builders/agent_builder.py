@@ -63,7 +63,6 @@ class AgentBuilder:
                 # Flatten the list of lists
                 tools = [tool for sublist in mcp_tools for tool in sublist]
 
-            
             # Add handoff tools if defined
             if agent_info.handoff_tools:
                 for handoff_tool in agent_info.handoff_tools:

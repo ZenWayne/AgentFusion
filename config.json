@@ -4,7 +4,7 @@
         "file_system_windows": {
             "command": "node",
             "args": [
-                "${userHome}\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-filesystem\\dist\\index.js", 
+                "${userHome}\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-filesystem\\dist\\index.js",
                 "${cwd}"
             ],
             "env": {}
@@ -25,9 +25,25 @@
             ],
             "env": {},
             "read_timeout_seconds": 30
+        },
+        "database": {
+            "command": "./.venv/bin/python",
+            "args": [
+                "-m",
+                "agent_fusion_mcp.database_server"
+            ],
+        "env": {}
         }
     },
     "agents": {
+        "human_proxy": {
+            "name": "human_proxy",
+            "description": "用户代理，负责与用户进行对话，并返回用户输入",
+            "labels":["human", "agent"],
+            "input_func":"input",
+            "type": "user_proxy_agent",
+            "prompt_path": "agent/human_pt.md"
+        },
         "human_proxy_ui_designer": {
             "name": "human_proxy_ui_designer",
             "description": "交互设计师兼产品设计师，负责管理产品需求和设计,真的人类用户，除此以外都是agent",
@@ -36,6 +52,21 @@
             "prompt_path": "agent/ui_designer_pt.md",
             "model_client": "deepseek-chat_DeepSeek",
             "mcp_tools": []
+        },
+        "database_agent": {
+            "name": "database_agent",
+            "description": "数据库助手，负责处理数据库相关的操作",
+            "labels":["database", "agent"],
+            "type": "code_agent",
+            "prompt_path": "agent/database_agent_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": ["database"],
+            "handoff_tools": [
+                {
+                    "target": "user",
+                    "message": "Transfer to user"
+                }
+            ]
         },
         "product_manager": {
             "name": "product_manager",
@@ -153,6 +184,15 @@
             "handoff_target": "user",
             "termination_condition": "handoff"
         },
+        "database_agent": {
+            "name": "database_agent",
+            "description": "",
+            "labels":["database_agent", "agent"],
+            "type": "round_robin_group_chat",
+            "participants": ["database_agent", "human_proxy"],
+            "handoff_target": "user",
+            "termination_condition": "handoff"
+        },
         "prompt_flow": {
             "name": "prompt_flow",
             "description": "Prompt迭代器",
@@ -204,13 +244,5 @@
             ],
             "start_node": "human_proxy"
         }
-    },
-
-    "all_in_one": {
-        "name": "all_in_one",
-        "description": "一个用于提示词特例化的工作流，该工作流从模板提取器（template_extractor）开始，然后将任务传递给提示词优化器（prompt_specialization）。",
-        "labels": ["prompt", "prompt_specialization", "group_chat", "graph_flow"],
-        "type": "graph_flow",
-        "participants": ["template_extractor", "prompt_specialization", "file_system", "human_proxy"]
     }
 }
