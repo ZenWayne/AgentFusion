@@ -32,7 +32,10 @@
                 "-m",
                 "agent_fusion_mcp.database_server"
             ],
-        "env": {}
+            "env": {}
+        },
+        "database-sse": {
+            "url": "http://localhost:8000/sse"
         }
     },
     "agents": {
@@ -63,7 +66,7 @@
             "mcp_tools": ["database"],
             "handoff_tools": [
                 {
-                    "target": "user",
+                    "target": "human_proxy",
                     "message": "Transfer to user"
                 }
             ]

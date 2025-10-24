@@ -14,7 +14,7 @@ from typing import Callable, Any
 from mcp.types import ListToolsResult, Tool
 from autogen_core.tools._base import ToolSchema
 
-from base.handoff import ToolType, ToolSchemaWithType, FunctionToolWithType
+from base.handoff import ToolType, HandoffFunctionToolWithType
 
 class HandoffWithType(Handoff):
     
@@ -25,10 +25,11 @@ class HandoffWithType(Handoff):
         def _handoff_tool() -> str:
             return self.message
 
-        return FunctionToolWithType(
+        return HandoffFunctionToolWithType(
             _handoff_tool, 
             name=self.name,
             description=self.description, 
             strict=True,
             type=ToolType.HANDOFF_TOOL,
+            target=self.target
         )

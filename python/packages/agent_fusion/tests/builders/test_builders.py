@@ -26,7 +26,7 @@ class TestLoadInfo:
                     "command": "npx",
                     "args": ["-y", "@modelcontextprotocol/server-filesystem", "${cwd}"],
                     "env": {},
-                    "read_timeout_seconds": 30
+                    "read_timeout_seconds": 5
                 }
             },
             "agents": {
@@ -331,7 +331,7 @@ class TestAgentBuilder:
             command="npx",
             args=["-y", "@modelcontextprotocol/server-filesystem", "${cwd}"],
             env={},
-            read_timeout_seconds=30
+            read_timeout_seconds=5
         )
         
         # Create agent configuration with MCP tools
@@ -952,7 +952,7 @@ class TestIntegration:
                         "${cwd}"
                     ],
                     "env": {},
-                    "read_timeout_seconds": 30
+                    "read_timeout_seconds": 5
                 }
             },
             "agents": {

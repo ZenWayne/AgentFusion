@@ -8,7 +8,8 @@ def parse_mcp_server(mcp_server: dict) -> McpServerParams:
         return StdioServerParams(
             command=mcp_server["command"],
             args=mcp_server["args"],
-            env=mcp_server["env"]
+            env=mcp_server["env"],
+            read_timeout_seconds=mcp_server.get("read_timeout_seconds", 5)
         )
     elif mcp_server["type"] == "SseServerParams":
         return SseServerParams(

@@ -79,7 +79,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         self._is_running = False
         self._cancellation_token: CancellationToken |None = None
         self._reflect_on_tool_use = False
-        self._handoff_tool_name : set[str] | None = None
+        self._handoff_tool_name : dict[str,str] | None = None
 
     @property
     def produced_message_types(self) -> Sequence[type[BaseChatMessage]]:
@@ -202,7 +202,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
 
         if not self._handoff_tool_name:
             self._handoff_tool_name = { 
-                tool["name"] for wb in self._workbench 
+                tool["name"]: tool["target"] for wb in self._workbench 
                 for tool in await wb.list_tools() 
                 if tool.get("type", None) == ToolType.HANDOFF_TOOL }
 
@@ -320,7 +320,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         handoff_reqs = [
             call for call in model_result.content if (
             isinstance(call, FunctionCall) 
-            and call.name in self._handoff_tool_name
+            and call.name in self._handoff_tool_name.keys()
             )
         ]
         if len(handoff_reqs) > 0:
@@ -332,9 +332,11 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             
             # Find the corresponding execution result
             selected_handoff_message = "Handoff requested"
+            target = "next_agent"
             for exec_call, exec_result in executed_calls_and_results:
                 if exec_call.name == selected_handoff.name:
                     selected_handoff_message = exec_result.content
+                    target = self._handoff_tool_name[exec_call.name]
                     break
             
             # Create handoff context
@@ -351,7 +353,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             return Response(
                 chat_message=HandoffMessage(
                     content=selected_handoff_message,
-                    target="next_agent",  # Default target
+                    target=target,  # Default target
                     source=agent_name,
                     context=handoff_context,
                 ),

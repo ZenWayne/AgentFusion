@@ -290,13 +290,14 @@ CREATE TABLE mcp_servers (
     id SERIAL PRIMARY KEY,
     server_uuid UUID UNIQUE DEFAULT gen_random_uuid(), -- External identifier
     name VARCHAR(255) NOT NULL UNIQUE,
-    command VARCHAR(500) NOT NULL,
+    command VARCHAR(500),
     args JSONB DEFAULT '[]', -- Array of command arguments
     env JSONB DEFAULT '{}', -- Environment variables
     url VARCHAR(500), -- Optional URL for server
     headers JSONB DEFAULT '{}', -- HTTP headers for connection
     timeout INTEGER DEFAULT 30, -- Connection timeout in seconds
     sse_read_timeout INTEGER DEFAULT 30, -- SSE read timeout in seconds
+    read_timeout_seconds INTEGER DEFAULT 5, -- General read timeout in seconds
     description TEXT,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -706,31 +707,39 @@ INSERT INTO model_clients (label, provider, component_type_id, description, mode
      '{"vision": false, "function_calling": true, "json_output": true, "family": "r1"}'::jsonb, 1);
 
 -- Insert sample agents
-INSERT INTO agents (name, label, provider, component_type_id, description, model_client_id, agent_type, labels, input_func, handoff_tools, created_by) VALUES 
+INSERT INTO agents (name, label, provider, component_type_id, description, model_client_id, agent_type, labels, input_func, handoff_tools, created_by) VALUES
     ('prompt_refiner', 'prompt_refiner', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 'assistant_agent', ARRAY['prompt', 'refiner'], 'input', '[]'::jsonb, 1),
     ('executor', 'executor', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 'assistant_agent', ARRAY['executor', 'action'], 'input', '[]'::jsonb, 1),
-    ('assistant_agent', 'assistant_agent', 'autogen_agentchat.agents.AssistantAgent', 1, '重构后的assistant_agent', 1, 'code_agent', ARRAY['agent', 'code_execution', 'python', 'development'], 'input', '[{"target": "user", "message": "Transfer to user"}]'::jsonb, 1);
+    ('assistant_agent', 'assistant_agent', 'autogen_agentchat.agents.AssistantAgent', 1, '重构后的assistant_agent', 1, 'code_agent', ARRAY['agent', 'code_execution', 'python', 'development'], 'input', '[{"target": "user", "message": "Transfer to user"}]'::jsonb, 1),
+    ('database_agent', 'database_agent', 'autogen_agentchat.agents.AssistantAgent', 1, '数据库助手，负责处理数据库相关的操作', 1, 'code_agent', ARRAY['database', 'agent'], 'input', '[{"target": "human_proxy", "message": "Transfer to user"}]'::jsonb, 1);
 
 -- Insert sample MCP servers based on config.json
-INSERT INTO mcp_servers (name, command, args, env, url, timeout, sse_read_timeout, description, created_by) VALUES 
-    ('file_system_windows', 'node', 
-     '["${userHome}\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\@modelcontextprotocol\\\\server-filesystem\\\\dist\\\\index.js", "${cwd}"]'::jsonb, 
-     '{}'::jsonb, NULL, 30, 30, 'File system MCP server for Windows', 1),
-    ('file_system_unix', 'npx', 
-     '["@modelcontextprotocol/server-filesystem", "${cwd}"]'::jsonb, 
-     '{}'::jsonb, NULL, 30, 30, 'File system MCP server for Unix/Linux', 1),
-    ('file_system', 'node', 
-     '["${userHome}\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\@modelcontextprotocol\\\\server-filesystem\\\\dist\\\\index.js", "${cwd}"]'::jsonb, 
-     '{}'::jsonb, NULL, 10, 10, 'Default file system MCP server', 1);
+INSERT INTO mcp_servers (name, command, args, env, url, timeout, sse_read_timeout, read_timeout_seconds, description, created_by) VALUES
+    ('file_system_windows', 'node',
+     '["${userHome}\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\@modelcontextprotocol\\\\server-filesystem\\\\dist\\\\index.js", "${cwd}"]'::jsonb,
+     '{}'::jsonb, NULL, 30, 30, 5, 'File system MCP server for Windows', 1),
+    ('file_system_unix', 'npx',
+     '["@modelcontextprotocol/server-filesystem", "${cwd}"]'::jsonb,
+     '{}'::jsonb, NULL, 30, 30, 5, 'File system MCP server for Unix/Linux', 1),
+    ('file_system', 'node',
+     '["${userHome}\\\\AppData\\\\Roaming\\\\npm\\\\node_modules\\\\@modelcontextprotocol\\\\server-filesystem\\\\dist\\\\index.js", "${cwd}"]'::jsonb,
+     '{}'::jsonb, NULL, 10, 10, 5, 'Default file system MCP server', 1),
+    ('database', './.venv/bin/python',
+     '["-m", "agent_fusion_mcp.database_server"]'::jsonb,
+     '{}'::jsonb, NULL, 30, 30, 5, 'Database MCP server for AgentFusion', 1),
+    ('database_http', '',
+     '[]'::jsonb,
+     '{}'::jsonb, 'http://localhost:sql/sse', 30, 30, 5, 'Database MCP server for AgentFusion http version', 1);
 
 -- Insert sample agent-MCP server relationships
-INSERT INTO agent_mcp_servers (agent_id, mcp_server_id, created_by) VALUES 
+INSERT INTO agent_mcp_servers (agent_id, mcp_server_id, created_by) VALUES
     (1, 1, 1), -- prompt_refiner uses file_system_windows
     (1, 3, 1), -- prompt_refiner uses file_system
     (2, 1, 1), -- executor uses file_system_windows
     (2, 2, 1), -- executor uses file_system_unix
     (2, 3, 1), -- executor uses file_system
-    (3, 3, 1); -- assistant_agent uses file_system
+    (3, 2, 1), -- assistant_agent uses file_system_unix
+    (4, 5, 1); -- database_agent uses database MCP server
 
 -- Insert sample group chats based on config.json
 INSERT INTO group_chats (name, type, description, labels, selector_prompt, model_client, created_by) VALUES 
@@ -1001,7 +1010,7 @@ WHERE a.is_active = TRUE AND (p.is_active = TRUE OR p.id IS NULL);
 
 -- View for agent MCP servers mapping
 CREATE VIEW agent_mcp_servers_view AS
-SELECT 
+SELECT
     a.id as agent_id,
     a.agent_uuid,
     a.name as agent_name,
@@ -1017,6 +1026,7 @@ SELECT
     ms.headers as mcp_headers,
     ms.timeout as mcp_timeout,
     ms.sse_read_timeout as mcp_sse_read_timeout,
+    ms.read_timeout_seconds as mcp_read_timeout_seconds,
     ms.description as mcp_description,
     ams.is_active as relationship_active,
     ams.created_at as relationship_created_at,
@@ -1029,7 +1039,7 @@ LEFT JOIN mcp_servers ms ON ams.mcp_server_id = ms.id
 LEFT JOIN "User" ua ON a.created_by = ua.id
 LEFT JOIN "User" ums ON ms.created_by = ums.id
 LEFT JOIN "User" urel ON ams.created_by = urel.id
-WHERE a.is_active = TRUE 
+WHERE a.is_active = TRUE
     AND (ms.is_active = TRUE OR ms.id IS NULL)
     AND (ams.is_active = TRUE OR ams.id IS NULL)
 ORDER BY a.name, ms.name;

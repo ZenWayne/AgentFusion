@@ -51,6 +51,7 @@ class McpModel(ComponentModel):
             headers=model.headers or {},
             timeout=model.timeout or 30,
             sse_read_timeout=model.sse_read_timeout or 30,
+            read_timeout_seconds=model.read_timeout_seconds or 5,
             server_type=server_type,
             is_active=model.is_active,
             server_uuid=str(model.server_uuid) if model.server_uuid else None
@@ -94,7 +95,8 @@ class McpModel(ComponentModel):
             "url": mcp_config.url,
             "headers": mcp_config.headers,
             "timeout": mcp_config.timeout,
-            "sse_read_timeout": mcp_config.sse_read_timeout
+            "sse_read_timeout": mcp_config.sse_read_timeout,
+            "read_timeout_seconds": mcp_config.read_timeout_seconds
         }
         
         update_success = await self._update_mcp_server(component_id, **update_data)
@@ -128,7 +130,8 @@ class McpModel(ComponentModel):
                 headers = {}
                 timeout = 30
                 sse_read_timeout = 30
-                
+                read_timeout_seconds = 5
+
                 if isinstance(params, StdioServerParams):
                     command = params.command
                     args = params.args or []
@@ -138,7 +141,8 @@ class McpModel(ComponentModel):
                     headers = params.headers or {}
                     timeout = getattr(params, 'timeout', 30)
                     sse_read_timeout = getattr(params, 'sse_read_timeout', 30)
-                
+                    read_timeout_seconds = getattr(params, 'read_timeout_seconds', 5)
+
                 # Create new MCP server
                 new_server = McpServerTable(
                     name=name,
@@ -149,6 +153,7 @@ class McpModel(ComponentModel):
                     headers=headers,
                     timeout=timeout,
                     sse_read_timeout=sse_read_timeout,
+                    read_timeout_seconds=read_timeout_seconds,
                     description=description,
                     created_by=created_by,
                     updated_by=created_by
@@ -178,7 +183,7 @@ class McpModel(ComponentModel):
         config = await self.get_component_by_id(server_id)
         if not config:
             return None
-            
+
         return {
             "id": server_id,
             "server_uuid": config.server_uuid,
@@ -190,6 +195,7 @@ class McpModel(ComponentModel):
             "headers": config.headers,
             "timeout": config.timeout,
             "sse_read_timeout": config.sse_read_timeout,
+            "read_timeout_seconds": config.read_timeout_seconds,
             "description": config.description,
             "is_active": config.is_active
         }
@@ -222,6 +228,7 @@ class McpModel(ComponentModel):
             "headers": config.headers,
             "timeout": config.timeout,
             "sse_read_timeout": config.sse_read_timeout,
+            "read_timeout_seconds": config.read_timeout_seconds,
             "description": config.description,
             "is_active": config.is_active
         }
@@ -249,6 +256,7 @@ class McpModel(ComponentModel):
                 "headers": config.headers,
                 "timeout": config.timeout,
                 "sse_read_timeout": config.sse_read_timeout,
+                "read_timeout_seconds": config.read_timeout_seconds,
                 "description": config.description,
                 "is_active": config.is_active
             })
@@ -281,7 +289,8 @@ class McpModel(ComponentModel):
             headers = {}
             timeout = 30
             sse_read_timeout = 30
-            
+            read_timeout_seconds = 5
+
             if isinstance(params, StdioServerParams):
                 command = params.command
                 args = params.args or []
@@ -291,7 +300,8 @@ class McpModel(ComponentModel):
                 headers = params.headers or {}
                 timeout = getattr(params, 'timeout', 30)
                 sse_read_timeout = getattr(params, 'sse_read_timeout', 30)
-            
+                read_timeout_seconds = getattr(params, 'read_timeout_seconds', 5)
+
             # Create updated config
             updated_config = McpServerConfig(
                 type=ComponentType.MCP,
@@ -304,6 +314,7 @@ class McpModel(ComponentModel):
                 headers=headers,
                 timeout=timeout,
                 sse_read_timeout=sse_read_timeout,
+                read_timeout_seconds=read_timeout_seconds,
                 is_active=current_config.is_active,
                 server_uuid=current_config.server_uuid
             )
@@ -357,6 +368,7 @@ class McpModel(ComponentModel):
                 server_config["headers"] = config.headers
                 server_config["timeout"] = config.timeout
                 server_config["sse_read_timeout"] = config.sse_read_timeout
+                server_config["read_timeout_seconds"] = config.read_timeout_seconds
             
             config_format[config.name] = server_config
                 
@@ -390,7 +402,8 @@ class McpModel(ComponentModel):
                 "url": config.url,
                 "headers": config.headers,
                 "timeout": config.timeout,
-                "sse_read_timeout": config.sse_read_timeout
+                "sse_read_timeout": config.sse_read_timeout,
+                "read_timeout_seconds": config.read_timeout_seconds
             }
         else:
             return None
@@ -417,7 +430,8 @@ class McpModel(ComponentModel):
                 "type": "StdioServerParams",
                 "command": server_data["command"],
                 "args": server_data["args"],
-                "env": server_data["env"]
+                "env": server_data["env"],
+                "read_timeout_seconds": server_data["read_timeout_seconds"]
             }
         elif server_data["url"]:
             config = {

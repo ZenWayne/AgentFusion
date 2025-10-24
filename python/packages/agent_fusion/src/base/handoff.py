@@ -10,9 +10,11 @@ class ToolType(StrEnum):
     NORMAL_TOOL = "normal_tool"
 
 
-class ToolSchemaWithType(ToolSchema):
+class TypedToolSchema(ToolSchema):
     type: ToolType
 
+class HandoffTypedToolSchema(TypedToolSchema):
+    target_agent: str
 
 class FunctionToolWithType(FunctionTool):
     type: ToolType
@@ -20,16 +22,33 @@ class FunctionToolWithType(FunctionTool):
         _type = kwargs.get("type")
         _type=kwargs.pop("type")
         super().__init__(*args, **kwargs)
-        self.type = ToolType.HANDOFF_TOOL if _type is None else _type
+        self.type = ToolType.HANDOFF_TOOL if _type is None else _type       
     
     @property
-    def schema(self) -> ToolSchemaWithType:
+    def schema(self) -> TypedToolSchema:
         base_ret = super().schema
 
-        return ToolSchemaWithType(
+        return TypedToolSchema(
             name=base_ret["name"],
             description=base_ret["description"],
             parameters=base_ret["parameters"],
             strict=base_ret["strict"],
             type=self.type
+        )
+
+class HandoffFunctionToolWithType(FunctionToolWithType):
+    def __init__(self, *args, **kwargs):
+        self.target = kwargs.pop("target", "next_agent")
+        super().__init__(*args, **kwargs)
+    @property
+    def schema(self) -> TypedToolSchema:
+        base_ret = super().schema
+
+        return HandoffTypedToolSchema(
+            name=base_ret["name"],
+            description=base_ret["description"],
+            parameters=base_ret["parameters"],
+            strict=base_ret["strict"],
+            type=self.type,
+            target=self.target
         )

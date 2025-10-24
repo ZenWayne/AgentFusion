@@ -13,6 +13,8 @@ import asyncio
 import json
 import logging
 import re
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 
 try:
@@ -26,13 +28,131 @@ except ImportError:
 from mcp.server import Server, NotificationOptions
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
+from mcp.server.sse import SseServerTransport
 from mcp.types import (
     Tool, TextContent, CallToolResult
 )
+from mcp.server.fastmcp import FastMCP
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("database-mcp-server")
+
+mcp_tool = FastMCP("database-mcp-server")
+
+
+@dataclass
+class DatabaseConnectionResponse:
+    """Structured response for database connection operations"""
+    success: bool
+    connection_name: Optional[str] = None
+    database_type: Optional[str] = None
+    message: Optional[str] = None
+    error: Optional[str] = None
+    connection_url: Optional[str] = None
+    timestamp: Optional[datetime] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization"""
+        result = {
+            "success": self.success
+        }
+
+        if self.connection_name is not None:
+            result["connection_name"] = self.connection_name
+        if self.database_type is not None:
+            result["database_type"] = self.database_type
+        if self.message is not None:
+            result["message"] = self.message
+        if self.error is not None:
+            result["error"] = self.error
+        if self.connection_url is not None:
+            result["connection_url"] = self.connection_url
+        if self.timestamp is not None:
+            result["timestamp"] = self.timestamp.isoformat()
+
+        return result
+
+
+@dataclass
+class DatabaseSecurityCheckResponse:
+    """Structured response for database security check operations"""
+    valid: bool
+    query_preview: Optional[str] = None
+    security_level: Optional[str] = None
+    detected_patterns: Optional[List[str]] = None
+    allowed_operations: Optional[List[str]] = None
+    error: Optional[str] = None
+    warnings: Optional[List[str]] = None
+    timestamp: Optional[datetime] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization"""
+        result = {
+            "valid": self.valid
+        }
+
+        if self.query_preview is not None:
+            result["query_preview"] = self.query_preview
+        if self.security_level is not None:
+            result["security_level"] = self.security_level
+        if self.detected_patterns is not None:
+            result["detected_patterns"] = self.detected_patterns
+        if self.allowed_operations is not None:
+            result["allowed_operations"] = self.allowed_operations
+        if self.error is not None:
+            result["error"] = self.error
+        if self.warnings is not None:
+            result["warnings"] = self.warnings
+        if self.timestamp is not None:
+            result["timestamp"] = self.timestamp.isoformat()
+
+        return result
+
+
+@dataclass
+class DatabaseQueryResponse:
+    """Structured response for database query execution operations"""
+    success: bool
+    connection_name: Optional[str] = None
+    query_preview: Optional[str] = None
+    execution_time_seconds: Optional[float] = None
+    rows_returned: Optional[int] = None
+    columns: Optional[List[str]] = None
+    data: Optional[List[Dict[str, Any]]] = None
+    row_limit_reached: Optional[bool] = None
+    error: Optional[str] = None
+    security_warnings: Optional[List[str]] = None
+    timestamp: Optional[datetime] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization"""
+        result = {
+            "success": self.success
+        }
+
+        if self.connection_name is not None:
+            result["connection_name"] = self.connection_name
+        if self.query_preview is not None:
+            result["query_preview"] = self.query_preview
+        if self.execution_time_seconds is not None:
+            result["execution_time_seconds"] = self.execution_time_seconds
+        if self.rows_returned is not None:
+            result["rows_returned"] = self.rows_returned
+        if self.columns is not None:
+            result["columns"] = self.columns
+        if self.data is not None:
+            result["data"] = self.data
+        if self.row_limit_reached is not None:
+            result["row_limit_reached"] = self.row_limit_reached
+        if self.error is not None:
+            result["error"] = self.error
+        if self.security_warnings is not None:
+            result["security_warnings"] = self.security_warnings
+        if self.timestamp is not None:
+            result["timestamp"] = self.timestamp.isoformat()
+
+        return result
 
 
 class DatabaseMCPServer:
@@ -155,8 +275,10 @@ class DatabaseMCPServer:
                 else:
                     result = {"error": f"Unknown tool: {name}"}
 
-                # Ensure result is a proper dictionary
-                if not isinstance(result, dict):
+                # Convert response objects to dictionary
+                if isinstance(result, (DatabaseConnectionResponse, DatabaseSecurityCheckResponse, DatabaseQueryResponse)):
+                    result = result.to_dict()
+                elif not isinstance(result, dict):
                     logger.warning(f"Result is not a dict: {type(result)} - converting to dict")
                     result = {"data": result}
 
@@ -175,7 +297,7 @@ class DatabaseMCPServer:
                 return error_result
 
     async def _connect_database(self, connection_name: str, database_type: str,
-                              **kwargs) -> Dict[str, Any]:
+                              connection_string: str, pool_size: int = 5, time_out: int = 30) -> DatabaseConnectionResponse:
         """
         Establish database connection with validation.
 
@@ -185,12 +307,6 @@ class DatabaseMCPServer:
             if not sqlalchemy:
                 raise ImportError("SQLAlchemy is required. Install with: pip install sqlalchemy")
 
-            # Build connection string
-            if kwargs.get('connection_string'):
-                connection_string = kwargs['connection_string']
-            else:
-                connection_string = self._build_connection_string(database_type, kwargs)
-
             # Create engine with safety settings
             engine_kwargs = {
                 'echo': False  # Don't log queries (security)
@@ -199,10 +315,12 @@ class DatabaseMCPServer:
             # Add pool settings only for non-SQLite databases
             if database_type != 'sqlite':
                 engine_kwargs.update({
-                    'pool_size': kwargs.get('pool_size', 5),
-                    'pool_timeout': kwargs.get('timeout', 30),
+                    'pool_size': pool_size,
+                    'pool_timeout': time_out,
                     'pool_recycle': 3600,  # Recycle connections hourly
                 })
+            else:
+                raise NotImplementedError("not supported for SQLite")
 
             engine = create_engine(connection_string, **engine_kwargs)
 
@@ -215,26 +333,30 @@ class DatabaseMCPServer:
 
             logger.info(f"Connected to database: {connection_name}")
 
-            return {
-                "success": True,
-                "connection_name": connection_name,
-                "database_type": database_type,
-                "message": f"Successfully connected to {database_type} database"
-            }
+            return DatabaseConnectionResponse(
+                success=True,
+                connection_name=connection_name,
+                database_type=database_type,
+                message=f"Successfully connected to {database_type} database",
+                connection_url=connection_string,
+                timestamp=datetime.now(timezone.utc)
+            )
 
         except ImportError as e:
-            return {
-                "success": False,
-                "error": f"Missing dependency: {str(e)}",
-                "suggestion": "Install with: pip install sqlalchemy pymysql psycopg2-binary"
-            }
+            return DatabaseConnectionResponse(
+                success=False,
+                connection_name=connection_name,
+                error=f"Missing dependency: {str(e)}",
+                timestamp=datetime.now(timezone.utc)
+            )
         except Exception as e:
             logger.error(f"Connection failed: {str(e)}")
-            return {
-                "success": False,
-                "error": str(e),
-                "connection_name": connection_name
-            }
+            return DatabaseConnectionResponse(
+                success=False,
+                connection_name=connection_name,
+                error=str(e),
+                timestamp=datetime.now(timezone.utc)
+            )
 
     def _build_connection_string(self, db_type: str, params: Dict[str, Any]) -> str:
         """Build database connection string."""
@@ -262,7 +384,7 @@ class DatabaseMCPServer:
             raise ValueError(f"Unsupported database type: {db_type}")
 
     async def _security_check(self, query: str, security_level: str = "medium",
-                            allowed_operations: Optional[List[str]] = None) -> Dict[str, Any]:
+                            allowed_operations: Optional[List[str]] = None) -> DatabaseSecurityCheckResponse:
         """
         Validate SQL query for security issues.
 
@@ -271,10 +393,17 @@ class DatabaseMCPServer:
         try:
             query_clean = query.strip()
             query_upper = query_clean.upper()
+            query_preview = query_clean[:100] + "..." if len(query_clean) > 100 else query_clean
 
             # Basic SQL syntax check
             if not query_upper:
-                return {"valid": False, "error": "Empty query"}
+                return DatabaseSecurityCheckResponse(
+                    valid=False,
+                    query_preview=query_preview,
+                    security_level=security_level,
+                    error="Empty query",
+                    timestamp=datetime.now(timezone.utc)
+                )
 
             # Check for SQL injection patterns
             injection_patterns = [
@@ -288,10 +417,14 @@ class DatabaseMCPServer:
 
             for pattern in injection_patterns:
                 if re.search(pattern, query_clean, re.IGNORECASE | re.DOTALL):
-                    return {
-                        "valid": False,
-                        "error": f"Potential SQL injection pattern detected: {pattern}"
-                    }
+                    return DatabaseSecurityCheckResponse(
+                        valid=False,
+                        query_preview=query_preview,
+                        security_level=security_level,
+                        detected_patterns=[pattern],
+                        error=f"Potential SQL injection pattern detected: {pattern}",
+                        timestamp=datetime.now(timezone.utc)
+                    )
 
             # Extract operation type
             operation_match = re.match(r"^(\w+)", query_upper)
@@ -301,77 +434,109 @@ class DatabaseMCPServer:
             if security_level == "strict":
                 allowed = ["SELECT"]
                 if operation not in allowed:
-                    return {
-                        "valid": False,
-                        "error": f"Strict mode: only {allowed} operations allowed"
-                    }
+                    return DatabaseSecurityCheckResponse(
+                        valid=False,
+                        query_preview=query_preview,
+                        security_level=security_level,
+                        allowed_operations=allowed,
+                        error=f"Strict mode: only {allowed} operations allowed",
+                        timestamp=datetime.now(timezone.utc)
+                    )
 
             elif security_level == "high":
                 dangerous = ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "TRUNCATE"]
                 if operation in dangerous:
-                    return {
-                        "valid": False,
-                        "error": f"High security: {operation} operations not allowed"
-                    }
+                    return DatabaseSecurityCheckResponse(
+                        valid=False,
+                        query_preview=query_preview,
+                        security_level=security_level,
+                        error=f"High security: {operation} operations not allowed",
+                        timestamp=datetime.now(timezone.utc)
+                    )
 
             elif security_level == "medium":
                 very_dangerous = ["DROP", "TRUNCATE", "DELETE DATABASE", "DROP DATABASE"]
                 for dangerous_op in very_dangerous:
                     if dangerous_op in query_upper:
-                        return {
-                            "valid": False,
-                            "error": f"Medium security: {dangerous_op} operations not allowed"
-                        }
+                        return DatabaseSecurityCheckResponse(
+                            valid=False,
+                            query_preview=query_preview,
+                            security_level=security_level,
+                            error=f"Medium security: {dangerous_op} operations not allowed",
+                            timestamp=datetime.now(timezone.utc)
+                        )
 
             # Custom allowed operations check
             if allowed_operations and operation not in allowed_operations:
-                return {
-                    "valid": False,
-                    "error": f"Operation {operation} not in allowed operations: {allowed_operations}"
-                }
+                return DatabaseSecurityCheckResponse(
+                    valid=False,
+                    query_preview=query_preview,
+                    security_level=security_level,
+                    allowed_operations=allowed_operations,
+                    error=f"Operation {operation} not in allowed operations: {allowed_operations}",
+                    timestamp=datetime.now(timezone.utc)
+                )
 
             # Query length check
             if len(query_clean) > 10000:
-                return {
-                    "valid": False,
-                    "error": "Query too long (max 10000 characters)"
-                }
+                return DatabaseSecurityCheckResponse(
+                    valid=False,
+                    query_preview=query_preview,
+                    security_level=security_level,
+                    error="Query too long (max 10000 characters)",
+                    timestamp=datetime.now(timezone.utc)
+                )
 
-            return {
-                "valid": True,
-                "operation": operation,
-                "security_level": security_level,
-                "message": f"Query validation passed for {operation} operation"
-            }
+            return DatabaseSecurityCheckResponse(
+                valid=True,
+                query_preview=query_preview,
+                security_level=security_level,
+                allowed_operations=allowed_operations,
+                warnings=[f"Query validation passed for {operation} operation"],
+                timestamp=datetime.now(timezone.utc)
+            )
 
         except Exception as e:
-            return {
-                "valid": False,
-                "error": f"Security check error: {str(e)}"
-            }
+            return DatabaseSecurityCheckResponse(
+                valid=False,
+                query_preview=query[:100] + "..." if len(query) > 100 else query,
+                security_level=security_level,
+                error=f"Security check error: {str(e)}",
+                timestamp=datetime.now(timezone.utc)
+            )
 
     async def _execute_query(self, connection_name: str, query: str,
                            params: Optional[List[str]] = None, max_rows: int = 1000,
-                           timeout: int = 60) -> Dict[str, Any]:
+                           timeout: int = 60) -> DatabaseQueryResponse:
         """
         Execute validated SQL query safely.
 
         Test focus: Query execution, result processing, security validation.
         """
+        start_time = datetime.now(timezone.utc)
+        query_preview = query[:100] + "..." if len(query) > 100 else query
+
         try:
             if connection_name not in self.connections:
-                return {
-                    "success": False,
-                    "error": f"Connection '{connection_name}' not established"
-                }
+                return DatabaseQueryResponse(
+                    success=False,
+                    connection_name=connection_name,
+                    query_preview=query_preview,
+                    error=f"Connection '{connection_name}' not established",
+                    timestamp=datetime.now(timezone.utc)
+                )
 
             # Additional security check before execution
             security_result = await self._security_check(query)
-            if not security_result["valid"]:
-                return {
-                    "success": False,
-                    "error": f"Security validation failed: {security_result['error']}"
-                }
+            if not security_result.valid:
+                return DatabaseQueryResponse(
+                    success=False,
+                    connection_name=connection_name,
+                    query_preview=query_preview,
+                    error=f"Security validation failed: {security_result.error}",
+                    security_warnings=[security_result.error] if security_result.error else None,
+                    timestamp=datetime.now(timezone.utc)
+                )
 
             engine = self.connections[connection_name]
 
@@ -404,53 +569,81 @@ class DatabaseMCPServer:
                 if not query.strip().upper().startswith('SELECT'):
                     conn.commit()
 
-                # Return minimal, secure result
-                return {
-                    "success": True,
-                    "operation": security_result["operation"],
-                    "row_count": row_count,
-                    "has_more": has_more,
-                    "columns": columns,
-                    "data": data,
-                    "message": f"Query executed successfully ({row_count} rows)"
-                }
+                # Calculate execution time
+                end_time = datetime.now(timezone.utc)
+                execution_time = (end_time - start_time).total_seconds()
+
+                return DatabaseQueryResponse(
+                    success=True,
+                    connection_name=connection_name,
+                    query_preview=query_preview,
+                    execution_time_seconds=execution_time,
+                    rows_returned=row_count,
+                    columns=columns,
+                    data=data,
+                    row_limit_reached=has_more,
+                    security_warnings=security_result.warnings,
+                    timestamp=end_time
+                )
 
         except SQLAlchemyError as e:
             logger.error(f"Database error: {str(e)}")
-            return {
-                "success": False,
-                "error": f"Database error: {str(e)}",
-                "query_preview": query[:100] + "..." if len(query) > 100 else query
-            }
+            return DatabaseQueryResponse(
+                success=False,
+                connection_name=connection_name,
+                query_preview=query_preview,
+                error=f"Database error: {str(e)}",
+                execution_time_seconds=(datetime.now(timezone.utc) - start_time).total_seconds(),
+                timestamp=datetime.now(timezone.utc)
+            )
         except Exception as e:
             logger.error(f"Execution error: {str(e)}")
-            return {
-                "success": False,
-                "error": f"Execution error: {str(e)}",
-                "query_preview": query[:100] + "..." if len(query) > 100 else query
-            }
+            return DatabaseQueryResponse(
+                success=False,
+                connection_name=connection_name,
+                query_preview=query_preview,
+                error=f"Execution error: {str(e)}",
+                execution_time_seconds=(datetime.now(timezone.utc) - start_time).total_seconds(),
+                timestamp=datetime.now(timezone.utc)
+            )
 
 
 # Create server instance
 database_server = DatabaseMCPServer()
 
+@mcp_tool.tool(structured_output=True)
+async def connect_database(connection_name: str, database_type: str, connection_string: str) -> DatabaseConnectionResponse:
+    """
+    Establish a connection to a database.
+
+    Test focus: Database connection establishment.
+    """
+    return await database_server._connect_database(connection_name, database_type, connection_string)
+
+@mcp_tool.tool(structured_output=True)
+async def security_check(query: str) -> DatabaseSecurityCheckResponse:
+    """
+    Perform a security check on a SQL query.
+
+    Test focus: Query security validation.
+    """
+    return await database_server._security_check(query)
+
+@mcp_tool.tool(structured_output=True)
+async def execute_query(connection_name: str, query: str,
+                 params: Optional[List[str]] = None, max_rows: int = 1000,
+                 timeout: int = 60) -> DatabaseQueryResponse:
+    """
+    Execute a SQL query.
+
+    Test focus: Query execution, result processing, security validation.
+    """
+    return await database_server._execute_query(connection_name, query, params, max_rows, timeout)
 
 async def main():
     """Main function to run the MCP server."""
-    async with stdio_server() as (read_stream, write_stream):
-        await database_server.server.run(
-            read_stream,
-            write_stream,
-            InitializationOptions(
-                server_name="database-mcp-server",
-                server_version="1.0.0",
-                capabilities=database_server.server.get_capabilities(
-                    notification_options=NotificationOptions(),
-                    experimental_capabilities={},
-                ),
-            ),
-        )
-
+    pass
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    mcp_tool.settings.port = 8001
+    mcp_tool.run(transport='sse')

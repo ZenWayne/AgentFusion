@@ -54,6 +54,8 @@ class AgentBuilder:
             # Handle MCP tools if they exist
             if agent_info.mcp_tools:
                 for mcp_server in agent_info.mcp_tools:
+                    if mcp_server.type != "StdioServerParams":
+                        continue
                     for idx, arg in enumerate(mcp_server.args):
                         mcp_server.args[idx] = parse_cwd_placeholders(arg)
                 mcp_tools = await asyncio.gather(
@@ -67,7 +69,7 @@ class AgentBuilder:
             if agent_info.handoff_tools:
                 for handoff_tool in agent_info.handoff_tools:
                     tools += [HandoffWithType(target=handoff_tool.target, message=handoff_tool.message).handoff_tool]
-            tools.append(retrieve_filesystem_tool())
+            #tools.append(retrieve_filesystem_tool())
             model_client_config = model_client_builder.get_component_by_name(agent_info.model_client)
             async with model_client_builder.build(model_client_config) as model_client:
                 workbench = [VectorStreamWorkbench(tools=tools)] if tools else None

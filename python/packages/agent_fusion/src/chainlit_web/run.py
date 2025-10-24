@@ -40,9 +40,9 @@ async def on_app_startup() -> None:
     load_dotenv()
     # config.run.port = 443
     # config.run.host = "e73cd5b88ea8.ngrok-free.app"
-    #enable_chainlit_logger()
-    #enable_autogen_logger(["autogen_core.events"], filter_types=[FilterType.ToolCall, FilterType.LLMCall])
-    enable_autogen_logger(["chainlit_web","chainlit"])
+    enable_chainlit_logger()
+    enable_autogen_logger(["autogen_core.events"], filter_types=[FilterType.ToolCall, FilterType.LLMCall])
+    #enable_autogen_logger(["chainlit_web","chainlit"])
     global database_layer
     database_layer=get_data_layer()
     
