@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  database-mcp:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile.database-mcp
+      target: database-mcp
+    image: agentfusion/database-mcp:latest
+    container_name: agentfusion-database-mcp
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app/python/packages/agent_fusion_mcp/src
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ../python/packages/agent_fusion_mcp:/app/python/packages/agent_fusion_mcp:ro
+    user: mcpuser
+    restart: unless-stopped
+    networks:
+      - agentfusion-network
+
+networks:
+  agentfusion-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local

@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_agentchat import TRACE_LOGGER_NAME
 from openai import NOT_GIVEN, AsyncAzureOpenAI, AsyncOpenAI
-from .rerank import rerank_tools_with_dashscope
+#from .rerank import rerank_tools_with_dashscope
 from autogen_core.tools import BaseTool, ToolOverride
 from typing import Any, Callable, Awaitable, Sequence
 from autogen_core.models import LLMMessage, SystemMessage
@@ -62,7 +62,7 @@ class VectorStreamWorkbench(StaticStreamWorkbench):
         for tool in reranked_tools:
             original_schema = tool.schema
 
-            # Apply overrides if they exist for this tool
+            # Apply overrides if they exist for this toolp
             if tool.name in self._tool_overrides:
                 override = self._tool_overrides[tool.name]
                 # Create a new ToolSchema with overrides applied

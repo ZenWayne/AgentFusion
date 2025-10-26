@@ -729,7 +729,7 @@ INSERT INTO mcp_servers (name, command, args, env, url, timeout, sse_read_timeou
      '{}'::jsonb, NULL, 30, 30, 5, 'Database MCP server for AgentFusion', 1),
     ('database_http', '',
      '[]'::jsonb,
-     '{}'::jsonb, 'http://localhost:sql/sse', 30, 30, 5, 'Database MCP server for AgentFusion http version', 1);
+     '{}'::jsonb, 'http://localhost:8001/sse', 30, 30, 5, 'Database MCP server for AgentFusion http version', 1);
 
 -- Insert sample agent-MCP server relationships
 INSERT INTO agent_mcp_servers (agent_id, mcp_server_id, created_by) VALUES

@@ -25,7 +25,7 @@ from .retrieve import retrieve_filesystem_tool, retrieve_vector_db_tool
 from .update import update_file_tool, update_vector_db_tool, upsert_vector_db_tool
 from .delete import delete_file_tool, delete_vector_db_documents_tool, delete_vector_db_collection_tool
 from .execute import execute_code_tool, execute_file_tool, execute_multiline_tool
-from .rerank import dashscope_rerank_documents_tool, dashscope_rerank_tools_tool
+#from .rerank import dashscope_rerank_documents_tool, dashscope_rerank_tools_tool
 
 # Export all tool functions
 __all__ = [
@@ -50,6 +50,6 @@ __all__ = [
     'execute_multiline_tool',
     
     # DashScope rerank tools
-    'dashscope_rerank_documents_tool',
-    'dashscope_rerank_tools_tool',
+    #'dashscope_rerank_documents_tool',
+    #'dashscope_rerank_tools_tool',
 ]

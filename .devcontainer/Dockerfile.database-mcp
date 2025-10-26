@@ -1,0 +1,45 @@
+# Database MCP Server Dockerfile - Multi-stage build with uv optimization
+# Stage 1: Builder - Install dependencies using uv
+FROM python:3.11-slim AS builder
+
+# Install uv for faster dependency management
+RUN pip install -i https://mirrors.cloud.tencent.com/pypi/simple uv
+
+# Set working directory for dependency installation
+WORKDIR /app
+
+# Copy dependency files and source code
+COPY python/packages/agent_fusion_mcp/ /app
+
+# Install dependencies using uv with cache mountp
+# This creates a reusable layer with all dependencies
+RUN --mount=type=cache,target=/root/.cache/uv \
+    pwd && ls && \
+    uv pip install --system -i https://mirrors.cloud.tencent.com/pypi/simple .
+
+# Stage 2: Runtime - Copy dependencies and application code
+FROM python:3.11-slim
+
+# Set environment variables for MCP server
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/python/packages/agent_fusion_mcp/src \
+    PATH="/root/.local/bin:$PATH"
+
+# Set working directory
+WORKDIR /app
+
+# Copy installed packages from builder stage
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+# REMOVED THIS LINE: COPY --from=builder /root/.local /root/.local
+
+# Copy application code
+COPY python/packages/agent_fusion_mcp/ /app/python/packages/agent_fusion_mcp/
+
+# Expose port for MCP communication
+EXPOSE 8001
+
+# Set entrypoint for the database server
+#ENTRYPOINT ["python", "-m", "agent_fusion_mcp.database_server"]
+CMD []

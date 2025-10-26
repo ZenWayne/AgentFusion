@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.rye.workspace]
+members = [
+    "packages/agent_fusion",
+    "packages/agent_fusion_mcp"
+]
+
+[tool.setuptools.packages.find]
+where = []
+
+[project]
+name = "agentfusion-workspace"
+version = "0.1.0"
+description = "AgentFusion workspace containing all packages"
+requires-python = ">=3.11"
+license = { text = "MIT" }

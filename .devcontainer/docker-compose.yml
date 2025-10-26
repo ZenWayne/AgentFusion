@@ -1,28 +1,28 @@
 version: '3.8'
 
 services:
-  app:
-    build:
-      context: ..
-      dockerfile: .devcontainer/Dockerfile
-    volumes:
-      - ..:/workspace:cached
-      - ~/.ssh:/root/.ssh:ro
-      - ~/.gitconfig:/root/.gitconfig:ro
-    working_dir: /workspace
-    command: sleep infinity
-    environment:
-      - PYTHONPATH=/workspace/python/packages/agent_fusion/src:/workspace/python/packages/agent_fusion_agent/src
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/agentfusion
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      - db
-      - redis
-    ports:
-      - "8000:8000"
-      - "8001:8001"
-    networks:
-      - agentfusion-network
+  # app:
+  #   build:
+  #     context: ..
+  #     dockerfile: .devcontainer/Dockerfile
+  #   volumes:
+  #     - ..:/workspace:cached
+  #     - ~/.ssh:/root/.ssh:ro
+  #     - ~/.gitconfig:/root/.gitconfig:ro
+  #   working_dir: /workspace
+  #   command: sleep infinity
+  #   environment:
+  #     - PYTHONPATH=/workspace/python/packages/agent_fusion/src:/workspace/python/packages/agent_fusion_agent/src
+  #     - DATABASE_URL=postgresql://postgres:postgres@db:5432/agentfusion
+  #     - REDIS_URL=redis://redis:6379
+  #   depends_on:
+  #     - db
+  #     - redis
+  #   ports:
+  #     - "8000:8000"
+  #     - "8001:8001"
+  #   networks:
+  #     - agentfusion-network
 
   db:
     image: postgres:15
@@ -39,15 +39,15 @@ services:
     networks:
       - agentfusion-network
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    networks:
-      - agentfusion-network
+  # redis:
+  #   image: redis:7-alpine
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   networks:
+  #     - agentfusion-network
 
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -62,10 +62,32 @@ services:
     networks:
       - agentfusion-network
 
+  # Development MCP server with dynamic code mounting
+  database-mcp-server:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile.database-mcp
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/agentfusion
+      - PYTHONPATH=/app/python/packages/agent_fusion/src
+      - LOG_LEVEL=INFO
+    ports:
+      - "8001:8000"
+    depends_on:
+      - db
+    networks:
+      - agentfusion-network
+    volumes:
+      - ../python/packages/agent_fusion_mcp:/app/python/packages/agent_fusion_mcp:ro
+    # This service allows running MCP server for development
+    # It overrides the default entrypoint and mounts local code for dynamic changes
+    # Access via: http://localhost:8001 
+
 volumes:
   postgres-data:
   redis-data:
 
 networks:
   agentfusion-network:
-    driver: bridge 
+    driver: bridge

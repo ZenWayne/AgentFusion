@@ -21,11 +21,13 @@ dependencies = [
     "sqlalchemy>=2.0.0",
     "autogen-ext[mcp]==0.6.4",
     "autogen-agentchat==0.6.4",
-    "autogen-core==0.6.4", 
+    "autogen-core==0.6.4",
     "autogen-ext==0.6.4",
     "autogen_ext[openai]==0.6.4",
     "psycopg2-binary",
-    "greenlet"
+    "greenlet",
+    "dashscope>=1.24.7",
+    "starlette>=0.46.2",
 ]
 
 [tool.setuptools.packages.find]
