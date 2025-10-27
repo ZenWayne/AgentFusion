@@ -175,6 +175,21 @@
                 }
             ],
             "mcp_tools": []
+        },
+        "lyra_agent": {
+            "name": "lyra_agent",
+            "description": "AI提示词优化专家，使用4-D方法论将用户输入转化为精确有效的提示词",
+            "labels": ["prompt", "optimization", "lyra", "ai"],
+            "type": "assistant_agent",
+            "prompt_path": "agent/lyra_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "handoff_tools": [
+                {
+                    "target": "human_proxy",
+                    "message": "Transfer to user"
+                }
+            ],
+            "mcp_tools": []
         }
     },
     "group_chats": {

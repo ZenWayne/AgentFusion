@@ -14,7 +14,6 @@ COPY python/packages/agent_fusion_mcp/ /app
 # Install dependencies using uv with cache mountp
 # This creates a reusable layer with all dependencies
 RUN --mount=type=cache,target=/root/.cache/uv \
-    pwd && ls && \
     uv pip install --system -i https://mirrors.cloud.tencent.com/pypi/simple .
 
 # Stage 2: Runtime - Copy dependencies and application code
@@ -38,8 +37,8 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY python/packages/agent_fusion_mcp/ /app/python/packages/agent_fusion_mcp/
 
 # Expose port for MCP communication
-EXPOSE 8001
+EXPOSE 8000
 
 # Set entrypoint for the database server
-#ENTRYPOINT ["python", "-m", "agent_fusion_mcp.database_server"]
+ENTRYPOINT ["python", "-m", "code_mcp.database_server"]
 CMD []

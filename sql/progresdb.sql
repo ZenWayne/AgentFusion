@@ -711,7 +711,8 @@ INSERT INTO agents (name, label, provider, component_type_id, description, model
     ('prompt_refiner', 'prompt_refiner', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 'assistant_agent', ARRAY['prompt', 'refiner'], 'input', '[]'::jsonb, 1),
     ('executor', 'executor', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 'assistant_agent', ARRAY['executor', 'action'], 'input', '[]'::jsonb, 1),
     ('assistant_agent', 'assistant_agent', 'autogen_agentchat.agents.AssistantAgent', 1, '重构后的assistant_agent', 1, 'code_agent', ARRAY['agent', 'code_execution', 'python', 'development'], 'input', '[{"target": "user", "message": "Transfer to user"}]'::jsonb, 1),
-    ('database_agent', 'database_agent', 'autogen_agentchat.agents.AssistantAgent', 1, '数据库助手，负责处理数据库相关的操作', 1, 'code_agent', ARRAY['database', 'agent'], 'input', '[{"target": "human_proxy", "message": "Transfer to user"}]'::jsonb, 1);
+    ('database_agent', 'database_agent', 'autogen_agentchat.agents.AssistantAgent', 1, '数据库助手，负责处理数据库相关的操作', 1, 'code_agent', ARRAY['database', 'agent'], 'input', '[{"target": "human_proxy", "message": "Transfer to user"}]'::jsonb, 1),
+    ('lyra_agent', 'lyra_agent', 'autogen_agentchat.agents.AssistantAgent', 1, 'AI提示词优化专家，使用4-D方法论将用户输入转化为精确有效的提示词', 1, 'code_agent', ARRAY['prompt', 'optimization', 'lyra', 'ai'], 'input', '[{"target": "human_proxy", "message": "Transfer to user"}]'::jsonb, 1);
 
 -- Insert sample MCP servers based on config.json
 INSERT INTO mcp_servers (name, command, args, env, url, timeout, sse_read_timeout, read_timeout_seconds, description, created_by) VALUES

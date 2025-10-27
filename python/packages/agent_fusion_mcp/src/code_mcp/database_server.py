@@ -645,4 +645,5 @@ async def main():
     pass
 
 if __name__ == "__main__":
+    mcp_tool.settings.host = "0.0.0.0"
     mcp_tool.run(transport='sse')
