@@ -9,8 +9,8 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import Callable, Awaitable, Optional, Union, TypeVar, Generic
 
-from builders.agent_builder import AgentBuilder as AgentBuilderBase
 from data_layer.data_layer import AgentFusionDataLayer
+from data_layer.models.agent_model import AgentModel as AgentBuilderBase
 from schemas.config_type import AgentConfigType
 from schemas.agent import AgentType as AgentTypeEnum
 from schemas.agent_type import AgentType, TypedAssistantAgent, TypedUserProxyAgent, TypedCodeAgent
@@ -111,8 +111,8 @@ class UIAgentBuilder(AgentBuilderBase):
                  data_layer: AgentFusionDataLayer, 
                  input_func: InputFuncType = None, 
                  model_client_streaming: bool = True):
-        super().__init__(input_func)
-        self._data_layer = data_layer
+        super().__init__(data_layer.db_layer)
+        #self._data_layer = data_layer
         self._model_client_streaming = model_client_streaming
     
     def _agent_chat_map(self, agent_type_enum: AgentTypeEnum) -> Type[AgentType]:

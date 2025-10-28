@@ -9,17 +9,17 @@ from contextlib import asynccontextmanager
 class ModelClientBuilder:
     """Model client builder following AgentBuilder pattern"""
     
-    def __init__(self, dotenv_path: str = None):
+    def init_component_map(self,  dotenv_path: str = None):
         load_dotenv(dotenv_path)
-        self._configs: Dict[str, ModelClientConfig] = {
+        self._component_map: Dict[str, ModelClientConfig] = {
             obj["label"]: ModelClientConfig(**obj) for obj in model_list
         }
     
-    def get_component_by_name(self, label: str) -> ModelClientConfig:
+    async def get_component_by_name(self, label: str) -> ModelClientConfig:
         """Get model client config by label"""
-        if label not in self._configs:
+        if label not in self._component_map:
             raise ValueError(f"Model client config not found for label: {label}")
-        return self._configs[label]
+        return self._component_map[label]
     
     @asynccontextmanager
     async def build(self, component_info: ModelClientConfig) -> AsyncGenerator[OpenAIChatCompletionClient, None]:
@@ -48,11 +48,12 @@ class ModelClientBuilder:
     
     def get_available_labels(self) -> list[str]:
         """Get all available model client labels"""
-        return list(self._configs.keys())
+        return list(self._component_map.keys())
 
 def create_model_clients(dotenv_path: str = None) -> Dict[str, Callable[[], OpenAIChatCompletionClient]]:
     """Create model client factory functions"""
-    builder = ModelClientBuilder(dotenv_path)
+    builder = ModelClientBuilder()
+    builder.init_component_map()
     
     model_clients = {}
     for label in builder.get_available_labels():

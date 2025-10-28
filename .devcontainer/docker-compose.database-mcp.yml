@@ -9,7 +9,7 @@ services:
     image: agentfusion/database-mcp:latest
     container_name: agentfusion-database-mcp
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
       - PYTHONPATH=/app/python/packages/agent_fusion_mcp/src
       - PYTHONDONTWRITEBYTECODE=1

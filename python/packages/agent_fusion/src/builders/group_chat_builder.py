@@ -59,7 +59,7 @@ class GroupChatBuilder:
             group_chat_class = self._group_chat_map(group_chat_info.type)
             if group_chat_info.type == GroupChatTypeEnum.SELECTOR_GROUP_CHAT:
                 model_client_builder: ModelClientBuilder = self.model_client_builder()
-                model_client_config = model_client_builder.get_component_by_name(group_chat_info.model_client)
+                model_client_config = await model_client_builder.get_component_by_name(group_chat_info.model_client)
                 model_client = await stack.enter_async_context(model_client_builder.build(model_client_config))
 
                 prompt_builder: PromptBuilder = self.prompt_builder()

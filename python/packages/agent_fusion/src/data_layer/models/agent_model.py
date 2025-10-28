@@ -24,8 +24,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from data_layer.models.llm_model import LLMModel
 
-if TYPE_CHECKING:
-    from data_layer.base_data_layer import DBDataLayer
+from data_layer.base_data_layer import DBDataLayer
 
 
 
@@ -35,7 +34,7 @@ class AgentModel(ComponentModel, AgentBuilder):
     uuid_column_name = "agent_uuid"
     name_column_name = "name"
     
-    def __init__(self, db_layer: "DBDataLayer"):
+    def __init__(self, db_layer: DBDataLayer):
         super().__init__(db_layer)
         self.prompt_model = PromptModel(db_layer)
         self.mcp_model = McpModel(db_layer)

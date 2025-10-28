@@ -13,12 +13,10 @@ from schemas.types import ComponentType
 from .group_chat_model import GroupChatTable
 from builders.prompt_builder import PromptBuilder
 from .tables.prompt_table import PromptTable, PromptVersionTable
+from data_layer.base_data_layer import DBDataLayer
 
 from sqlalchemy import select, insert, update, and_
 from sqlalchemy.sql import func
-
-if TYPE_CHECKING:
-    from data_layer.base_data_layer import DBDataLayer
 
 
 class PromptModel(ComponentModel, PromptBuilder):
@@ -27,7 +25,7 @@ class PromptModel(ComponentModel, PromptBuilder):
     uuid_column_name = "prompt_uuid"
     name_column_name = "name"
     
-    def __init__(self, db_layer: "DBDataLayer"):
+    def __init__(self, db_layer: DBDataLayer):
         super().__init__(db_layer)
     
     async def get_prompt_by_catagory_and_name(self, component_type: ComponentType, component_name: str, ) -> Optional[ComponentInfo]:

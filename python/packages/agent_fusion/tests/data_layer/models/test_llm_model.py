@@ -51,7 +51,8 @@ async def sample_model_client(sqlite_db):
             base_url="https://api.deepseek.com/v1",
             provider="deepseek",  # Required field
             model_info={"family": "deepseek", "context_window": 32768},
-            config={"api_key_type": "DEEPSEEK_API_KEY", "stream": True, "temperature": 0.7},
+            config={"stream": True, "temperature": 0.7},
+            api_key_type="DEEPSEEK_API_KEY",
             client_uuid=str(uuid.uuid4()),
             is_active=True,
             created_at=datetime.utcnow(),
@@ -124,7 +125,8 @@ class TestLLMModelToComponentInfo:
                 base_url="https://api.test.com",
                 provider="test-provider",  # Required field
                 model_info={},  # Empty dict
-                config={"api_key_type": "TEST_KEY", "stream": False},
+                config={"stream": False},
+                api_key_type="TEST_KEY",
                 client_uuid=str(uuid.uuid4()),
                 is_active=True
             )
@@ -201,7 +203,7 @@ class TestLLMModelUpdateModelClient:
     async def test_update_model_client_json_fields(self, llm_model: LLMModel, sample_model_client):
         """Test updating JSON fields (model_info and config)"""
         new_model_info = {"family": "updated-family", "version": "2.0"}
-        new_config = {"api_key_type": "UPDATED_KEY", "stream": False, "temperature": 0.5}
+        new_config = {"stream": False, "temperature": 0.5}
         
         result = await llm_model._update_model_client(
             sample_model_client.id,

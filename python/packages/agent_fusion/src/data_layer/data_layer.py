@@ -85,6 +85,9 @@ class AgentFusionDataLayer(BaseDataLayer):
         self.thread = ThreadModel(self.db_layer)
         self.mcp = McpModel(self.db_layer)
 
+    async def close(self):
+        await self.db_layer.cleanup()
+
     async def connect(self):
         """连接数据库"""
         await self.db_layer.connect()

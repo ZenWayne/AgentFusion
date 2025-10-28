@@ -230,7 +230,7 @@ CREATE TABLE model_clients (
     description TEXT,
     model_name VARCHAR(255),
     base_url VARCHAR(500),
-    api_key_hash VARCHAR(255), -- Store hash instead of actual key
+    api_key_type VARCHAR(64), -- Type of API key (e.g., OPENAI_API_KEY, DEEPSEEK_API_KEY)
     model_info JSONB DEFAULT '{}', -- Store model capabilities (vision, function_calling, etc.)
     config JSONB DEFAULT '{}', -- Store full configuration
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -703,7 +703,9 @@ INSERT INTO component_types (name, description) VALUES
 INSERT INTO model_clients (label, provider, component_type_id, description, model_name, base_url, model_info, created_by) VALUES 
     ('deepseek-chat_DeepSeek', 'autogen_ext.models.openai.OpenAIChatCompletionClient', 2, 'Chat completion client for OpenAI hosted models.', 'deepseek-chat', 'https://api.deepseek.com/v1', 
      '{"vision": false, "function_calling": true, "json_output": true, "family": "r1"}'::jsonb, 1),
-     ('qwq-32b_Aliyun', 'autogen_ext.models.openai.OpenAIChatCompletionClient', 2, 'Chat completion client for OpenAI hosted models.', 'qwq-32b', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 
+    ('qwq-32b_Aliyun', 'autogen_ext.models.openai.OpenAIChatCompletionClient', 2, 'Chat completion client for OpenAI hosted models.', 'qwq-32b', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 
+     '{"vision": false, "function_calling": true, "json_output": true, "family": "r1"}'::jsonb, 1),
+    ('qwen3-max_Aliyun', 'autogen_ext.models.openai.OpenAIChatCompletionClient', 2, 'Chat completion client for OpenAI hosted models.', 'qwen3-max', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 
      '{"vision": false, "function_calling": true, "json_output": true, "family": "r1"}'::jsonb, 1);
 
 -- Insert sample agents
@@ -712,7 +714,8 @@ INSERT INTO agents (name, label, provider, component_type_id, description, model
     ('executor', 'executor', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 'assistant_agent', ARRAY['executor', 'action'], 'input', '[]'::jsonb, 1),
     ('assistant_agent', 'assistant_agent', 'autogen_agentchat.agents.AssistantAgent', 1, '重构后的assistant_agent', 1, 'code_agent', ARRAY['agent', 'code_execution', 'python', 'development'], 'input', '[{"target": "user", "message": "Transfer to user"}]'::jsonb, 1),
     ('database_agent', 'database_agent', 'autogen_agentchat.agents.AssistantAgent', 1, '数据库助手，负责处理数据库相关的操作', 1, 'code_agent', ARRAY['database', 'agent'], 'input', '[{"target": "human_proxy", "message": "Transfer to user"}]'::jsonb, 1),
-    ('lyra_agent', 'lyra_agent', 'autogen_agentchat.agents.AssistantAgent', 1, 'AI提示词优化专家，使用4-D方法论将用户输入转化为精确有效的提示词', 1, 'code_agent', ARRAY['prompt', 'optimization', 'lyra', 'ai'], 'input', '[{"target": "human_proxy", "message": "Transfer to user"}]'::jsonb, 1);
+    ('lyra_agent', 'lyra_agent', 'autogen_agentchat.agents.AssistantAgent', 1, 'AI提示词优化专家，使用4-D方法论将用户输入转化为精确有效的提示词', 3, 'code_agent', ARRAY['prompt', 'optimization', 'lyra', 'ai'], 'input', '[{"target": "human_proxy", "message": "Transfer to user"}]'::jsonb, 1),
+    ('python_agent', 'python_agent', 'autogen_agentchat.agents.AssistantAgent', 1, 'Python code execution assistant that generates and executes Python code solutions wrapped in markdown blocks to complete computational tasks programmatically', 3, 'code_agent', ARRAY['python', 'code_execution', 'development', 'automation', 'analysis'], 'input', '[{"target": "human_proxy", "message": "Transfer to user"}]'::jsonb, 1);
 
 -- Insert sample MCP servers based on config.json
 INSERT INTO mcp_servers (name, command, args, env, url, timeout, sse_read_timeout, read_timeout_seconds, description, created_by) VALUES
@@ -764,7 +767,9 @@ INSERT INTO group_chat_participants (group_chat_id, agent_id, participant_role, 
 INSERT INTO prompts (prompt_id, name, category, subcategories, description, agent_id, created_by) VALUES 
     ('prd_pt_v1', 'Product Requirements Document Template', 'agent', ARRAY['prd_pt'], 'Universal PRD framework generator', 1, 1),
     ('ui_designer_pt_v1', 'UI Designer Prompt Template', 'agent', ARRAY['ui_designer_pt'], 'UI design assistant prompt', 2, 1),
-    ('prompt_refiner_system', 'Prompt Refiner System Message', 'agent', ARRAY['system_message'], 'System message for prompt refiner agent', 1, 1);
+    ('prompt_refiner_system', 'Prompt Refiner System Message', 'agent', ARRAY['system_message'], 'System message for prompt refiner agent', 1, 1),
+    ('lyra_agent_prompt', 'lyra_agent', 'agent', ARRAY['default'], 'lyra_agent prompt', 5, 1),
+    ('python_agent_prompt', 'python_agent_prompt', 'agent', ARRAY['default'], 'python_agent prompt', 6, 1);
 
 -- Insert sample threads
 INSERT INTO threads (id, name, user_id, user_identifier, tags, thread_metadata) VALUES 

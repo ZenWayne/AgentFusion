@@ -6,7 +6,6 @@ from schemas.component import ComponentInfo
 from schemas.agent import AssistantAgentConfig, UserProxyAgentConfig, AgentType as AgentTypeEnum, InputFuncType
 from schemas.agent_type import AgentType, TypedAssistantAgent, TypedUserProxyAgent, TypedCodeAgent
 from builders.model_builder import ModelClientBuilder
-from model_client import ModelClient
 from autogen_ext.tools.mcp import mcp_server_tools, McpServerParams
 from autogen_ext.tools.mcp import StdioMcpToolAdapter, SseMcpToolAdapter
 from .utils import AgentInfo
@@ -70,7 +69,7 @@ class AgentBuilder:
                 for handoff_tool in agent_info.handoff_tools:
                     tools += [HandoffWithType(target=handoff_tool.target, message=handoff_tool.message).handoff_tool]
             #tools.append(retrieve_filesystem_tool())
-            model_client_config = model_client_builder.get_component_by_name(agent_info.model_client)
+            model_client_config = await model_client_builder.get_component_by_name(agent_info.model_client)
             async with model_client_builder.build(model_client_config) as model_client:
                 workbench = [VectorStreamWorkbench(tools=tools)] if tools else None
                 agent = agent_class(
@@ -86,7 +85,7 @@ class AgentBuilder:
                 agent.component_label = agent_info.name
                 yield agent
         elif agent_info.type == AgentTypeEnum.ASSISTANT_AGENT:
-            model_client_config = model_client_builder.get_component_by_name(agent_info.model_client)
+            model_client_config = await model_client_builder.get_component_by_name(agent_info.model_client)
             async with model_client_builder.build(model_client_config) as model_client:
                 agent_tools = []
                 # Handle MCP tools if they exist

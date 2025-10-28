@@ -8,8 +8,8 @@ import asyncio
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union, Type
 
-if TYPE_CHECKING:
-    from data_layer.base_data_layer import DBDataLayer
+
+from data_layer.base_data_layer import DBDataLayer
 
 from schemas.component import ComponentInfo
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, UUID, select, and_, ForeignKey
@@ -21,14 +21,14 @@ from .tables import BaseComponentTable, Base
 class BaseModel:
     """所有数据模型的基类"""
     
-    def __init__(self, db_layer: "DBDataLayer"):
+    def __init__(self, db_layer: DBDataLayer):
         """
         初始化基础模型
         
         Args:
             db_layer: 数据库操作层实例
         """
-        self.db = db_layer
+        self.db : DBDataLayer = db_layer
     
     async def execute_query(
         self, query: str, params: Union[Dict, List, None] = None

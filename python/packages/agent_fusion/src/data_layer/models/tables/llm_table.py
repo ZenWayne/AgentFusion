@@ -16,6 +16,6 @@ class ModelClientTable(BaseComponentTable):
     component_version = Column(Integer, default=1)
     model_name = Column(String(255))
     base_url = Column(String(500))
-    api_key_hash = Column(String(255))
+    api_key_type = Column(String(64))
     model_info = Column(JSONB, default={})
     config = Column(JSONB, default={})
