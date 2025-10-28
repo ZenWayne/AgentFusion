@@ -1,0 +1,3 @@
+-- Add python_agent to the agents table
+INSERT INTO agents (name, label, provider, component_type_id, description, model_client_id, agent_type, labels, input_func, handoff_tools, created_by) VALUES
+    ('python_agent', 'python_agent', 'agents.codeagent.CodeAgent', 1, 'Python代码执行助手，可以通过<code>标签执行Python代码片段来完成任务', 1, 'code_agent', ARRAY['python', 'code_execution', 'development', 'automation'], 'input', '[{"target": "human_proxy", "message": "Transfer to user"}]'::jsonb, 1);

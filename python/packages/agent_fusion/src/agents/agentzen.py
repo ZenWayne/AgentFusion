@@ -96,7 +96,7 @@ class CodeExecutionAgent(BaseChatAgent):
                 
                 # Create response message with execution results
                 result_content = f"Code Block {i+1} Execution:\n"
-                result_content += f"Code:\n```python\n{code_block}\n```\n\n"
+                #result_content += f"Code:\n```python\n{code_block}\n```\n\n"
                 result_content += f"Stdout:\n{result['stdout']}\n\n"
                 result_content += f"Stderr:\n{result['stderr']}\n\n"
                 result_content += f"Return Code: {result['returncode']}\n"

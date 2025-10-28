@@ -176,8 +176,8 @@
             ],
             "mcp_tools": []
         },
-        "lyra_agent": {
-            "name": "lyra_agent",
+        "lyra": {
+            "name": "lyra",
             "description": "AI提示词优化专家，使用4-D方法论将用户输入转化为精确有效的提示词",
             "labels": ["prompt", "optimization", "lyra", "ai"],
             "type": "assistant_agent",

@@ -76,13 +76,14 @@ class UserSessionManager:
         try:
             agents = await data_layer_instance.agent.get_all_components()  # List[ComponentInfo]
             group_chats = await data_layer_instance.group_chat.get_all_components()  # List[ComponentInfo]
+            models = await data_layer_instance.llm.get_all_components()
             
             agents_dict = {agent.name: agent for agent in agents}
             # 将group_chats列表转换为字典
             group_chats_dict = {gc.name: gc for gc in group_chats}
             
             # Include both agents and group chats in component map for single agent and group chat modes
-            self.component_info_map = {**agents_dict, **group_chats_dict}
+            self.component_info_map = {**agents_dict, **group_chats_dict, **models}
         except Exception as e:
             print(f"Error initializing component_info_map: {e}")
             self.component_info_map = {}

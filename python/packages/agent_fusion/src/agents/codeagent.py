@@ -183,6 +183,118 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             else:
                 tools.extend(await wb.list_tools())
         return tools
+    
+    async def _extract_code_blocks(self, content: str) -> List[str]:
+        """Extract code blocks from content"""
+        code_blocks = []
+        pattern = r'<code>(.*?)</code>'
+        matches = re.findall(pattern, content, re.DOTALL)
+        
+        for match in matches:
+            # Clean up the code block
+            code = match.strip()
+            if code:
+                code_blocks.append(code)
+        
+        return code_blocks
+
+    async def _check_and_execute_code(self, messages: List[LLMMessage]) -> List[LLMMessage]:
+        modified_messages = []
+        for msg in messages:
+            # Find all code blocks and execute them in one pass
+            pattern = r'```python(.*?)```'
+            matches = list(re.finditer(pattern, msg.content, re.DOTALL))
+
+            if not matches:
+                # No code blocks, return original message
+                modified_messages.append(msg)
+                continue
+
+            # Execute all code blocks
+            execution_results = []
+            for match in matches:
+                code_content = match.group(1).strip()
+                if code_content:
+                    result = await self._execute_python_code(code_content)
+                    execution_results.append(result)
+                else:
+                    execution_results.append(None)
+
+            #CR using string here and assigning to msg.content
+            modified_content = msg.content
+            offset = 0
+
+            for i, match in enumerate(matches):
+                if execution_results[i] is not None:
+                    result = execution_results[i]
+                    stdout = result.get('stdout', '')
+                    stderr = result.get('stderr', '')
+
+                    # Build the code_result block with XML tags
+                    result_parts = []
+                    if stdout:
+                        result_parts.append(f"<stdout>{stdout}</stdout>")
+                    if stderr:
+                        result_parts.append(f"<stderr>{stderr}</stderr>")
+
+                    if result_parts:
+                        result_block = f"\n```result\n" + "\n".join(result_parts) + "\n```"
+
+                        # Adjust match positions for the offset
+                        start_pos = match.start() + offset
+                        end_pos = match.end() + offset
+
+                        # Insert result after the code block
+                        modified_content = modified_content[:end_pos] + result_block + modified_content[end_pos:]
+                        offset += len(result_block)
+                modified_messages.append(AssistantMessage(
+                    content=modified_content,
+                    source=self.name
+                ))
+
+        return modified_messages
+
+    
+    async def _execute_python_code(self, code: str) -> dict:
+        """
+        Execute Python code in a subprocess and capture stdout, stderr, and return code
+        """
+        try:
+            # Create a temporary file with the Python code
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as temp_file:
+                temp_file.write(code)
+                temp_file_path = temp_file.name
+            
+            # Execute the Python code using subprocess
+            process = subprocess.Popen(
+                ['python', temp_file_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=os.getcwd()
+            )
+            
+            stdout, stderr = process.communicate()
+            
+            return {
+                'stdout': stdout or '(no output)',
+                'stderr': stderr or '(no errors)',
+                'returncode': process.returncode
+            }
+        
+        except Exception as e:
+            return {
+                'stdout': '',
+                'stderr': f'Execution error: {str(e)}',
+                'returncode': -1
+            }
+        finally:
+            # Clean up the temporary file
+            try:
+                if 'temp_file_path' in locals():
+                    os.unlink(temp_file_path)
+            except OSError:
+                pass
 
     async def on_messages_stream(
         self, messages: Sequence[BaseChatMessage], cancellation_token: CancellationToken
@@ -193,7 +305,12 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         # Add new messages to context
         for message in messages:
             await self._model_context.add_message(message.to_model_message())
-        
+
+        # Check and execute code blocks in the messages
+        modified_messages=await self._check_and_execute_code(messages)
+        if modified_messages and len(modified_messages) > 0:
+            messages = modified_messages       
+
         # Call LLM
         llm_messages = await self._get_compatible_context(self._model_client, self._model_context)
 
@@ -221,14 +338,24 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             thought_event = ThoughtEvent(content=model_result.thought, source=self.name)
             yield thought_event
 
-        # Add the assistant message to the model context (including thought if present)
-        await self._model_context.add_message(
-            AssistantMessage(
-                content=model_result.content,
-                source=self.name,
-                thought=getattr(model_result, "thought", None),
-            )
+        # Check and execute code blocks in the assistant message
+        assistant_message = AssistantMessage(
+            content=model_result.content,
+            source=self.name,
+            thought=getattr(model_result, "thought", None),
         )
+
+        # Process code execution if present
+        modified_messages = await self._check_and_execute_code([assistant_message])
+        processed_message = assistant_message  # Default to original message
+        if modified_messages and len(modified_messages) > 0:
+            # Use the modified message with execution results
+            processed_message = modified_messages[0]
+            # Update the model_result content with execution results
+            model_result.content = processed_message.content
+
+        # Add the (possibly modified) assistant message to the model context
+        await self._model_context.add_message(processed_message)
 
         for loop_iteration in range(1,self._max_tool_iterations):            
             assert create_result_or_stream_event is not None, "No model result was produced."
