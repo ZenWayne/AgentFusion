@@ -18,6 +18,7 @@ from data_layer.base_data_layer import DBDataLayer
 from sqlalchemy import select, insert, update, and_, UUID, Column, Integer, String, Text, Boolean, DateTime
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
+from dotenv import load_dotenv
 
 class LLMModel(ComponentModel, ModelClientBuilder):
     """LLM模型数据模型"""
@@ -28,8 +29,9 @@ class LLMModel(ComponentModel, ModelClientBuilder):
     def __init__(self, db_layer: DBDataLayer):
         super().__init__(db_layer)
     
-    async def init_component_map(self):
+    async def init_component_map(self, dotenv_path: str = None):
         """consider move to base one day? currently it's unnecessary because there is no common between agent and modelclient"""
+        load_dotenv(dotenv_path)
         self._component_map = self.get_all_active_components()
         return self._component_map
 

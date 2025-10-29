@@ -11,6 +11,11 @@ members = [
 [tool.setuptools.packages.find]
 where = []
 
+[tool.uv.workspace]
+members = [
+    "packages/agent_fusion_memory",
+]
+
 [project]
 name = "agentfusion-workspace"
 version = "0.1.0"

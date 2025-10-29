@@ -22,6 +22,9 @@ class BaseChatQueue(ABC):
         """Base start method - can be overridden by derived classes"""
         pass
     
+    async def on_switch(self):
+        """Base switch method - can be overridden by derived classes"""
+        pass
     @abstractmethod
     async def push(self, messages: Union[str, List[LLMMessage]]) -> AsyncGenerator[BaseAgentEvent | BaseChatMessage | TaskResult, None]:
         """Abstract push interface - must be implemented by derived classes"""

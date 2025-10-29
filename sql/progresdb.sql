@@ -230,7 +230,7 @@ CREATE TABLE model_clients (
     description TEXT,
     model_name VARCHAR(255),
     base_url VARCHAR(500),
-    api_key_type VARCHAR(64), -- Type of API key (e.g., OPENAI_API_KEY, DEEPSEEK_API_KEY)
+    api_key_type VARCHAR(64) NOT NULL, -- Type of API key (e.g., OPENAI_API_KEY, DEEPSEEK_API_KEY)
     model_info JSONB DEFAULT '{}', -- Store model capabilities (vision, function_calling, etc.)
     config JSONB DEFAULT '{}', -- Store full configuration
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -700,12 +700,12 @@ INSERT INTO component_types (name, description) VALUES
     ('chat_completion_context', 'Chat completion context component');
 
 -- Insert sample model clients based on the config
-INSERT INTO model_clients (label, provider, component_type_id, description, model_name, base_url, model_info, created_by) VALUES 
-    ('deepseek-chat_DeepSeek', 'autogen_ext.models.openai.OpenAIChatCompletionClient', 2, 'Chat completion client for OpenAI hosted models.', 'deepseek-chat', 'https://api.deepseek.com/v1', 
+INSERT INTO model_clients (label, provider, component_type_id, description, model_name, base_url, api_key_type, model_info, created_by) VALUES 
+    ('deepseek-chat_DeepSeek', 'autogen_ext.models.openai.OpenAIChatCompletionClient', 2, 'Chat completion client for OpenAI hosted models.', 'deepseek-chat', 'https://api.deepseek.com/v1', 'DEEPSEEK_API_KEY',
      '{"vision": false, "function_calling": true, "json_output": true, "family": "r1"}'::jsonb, 1),
-    ('qwq-32b_Aliyun', 'autogen_ext.models.openai.OpenAIChatCompletionClient', 2, 'Chat completion client for OpenAI hosted models.', 'qwq-32b', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 
+    ('qwq-32b_Aliyun', 'autogen_ext.models.openai.OpenAIChatCompletionClient', 2, 'Chat completion client for OpenAI hosted models.', 'qwq-32b', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'DASHSCOPE_API_KEY',
      '{"vision": false, "function_calling": true, "json_output": true, "family": "r1"}'::jsonb, 1),
-    ('qwen3-max_Aliyun', 'autogen_ext.models.openai.OpenAIChatCompletionClient', 2, 'Chat completion client for OpenAI hosted models.', 'qwen3-max', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 
+    ('qwen3-max_Aliyun', 'autogen_ext.models.openai.OpenAIChatCompletionClient', 2, 'Chat completion client for OpenAI hosted models.', 'qwen3-max', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'DASHSCOPE_API_KEY',
      '{"vision": false, "function_calling": true, "json_output": true, "family": "r1"}'::jsonb, 1);
 
 -- Insert sample agents

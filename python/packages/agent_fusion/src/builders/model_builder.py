@@ -53,7 +53,7 @@ class ModelClientBuilder:
 def create_model_clients(dotenv_path: str = None) -> Dict[str, Callable[[], OpenAIChatCompletionClient]]:
     """Create model client factory functions"""
     builder = ModelClientBuilder()
-    builder.init_component_map()
+    builder.init_component_map(dotenv_path)
     
     model_clients = {}
     for label in builder.get_available_labels():

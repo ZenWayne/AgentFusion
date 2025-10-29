@@ -187,9 +187,12 @@ class User(UserSessionData, UserSession):
         """Initialize and start chat session"""
         try:
             chat_profile_name : Optional[str] = self.get("chat_profile")
+            component_queue : BaseChatQueue = self.get("current_component_queue")
             if chat_profile_name is None:
                 chat_profiles = await User.get_chat_profiles(data_layer)
                 chat_profile_name = self.set("chat_profile", chat_profiles[0].name)
+            elif component_queue:
+                await component_queue.on_switch()
 
             component_name = chat_profile_name
             await cl.Message(

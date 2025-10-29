@@ -25,7 +25,9 @@ from sqlalchemy.dialects.postgresql import JSONB
 from data_layer.models.llm_model import LLMModel
 
 from data_layer.base_data_layer import DBDataLayer
+from logging import getLogger
 
+logger = getLogger("chainlit_web")
 
 
 class AgentModel(ComponentModel, AgentBuilder):
@@ -35,7 +37,10 @@ class AgentModel(ComponentModel, AgentBuilder):
     name_column_name = "name"
     
     def __init__(self, db_layer: DBDataLayer):
-        super().__init__(db_layer)
+        # Initialize ComponentModel
+        ComponentModel.__init__(self, db_layer)
+        # Initialize AgentBuilder with default parameters
+        AgentBuilder.__init__(self)
         self.prompt_model = PromptModel(db_layer)
         self.mcp_model = McpModel(db_layer)
     
@@ -98,6 +103,8 @@ class AgentModel(ComponentModel, AgentBuilder):
             
             # Get current prompt content from PromptModel
             current_prompt = await self.prompt_model.get_current_prompt_content(ComponentType.AGENT, table_row.name)
+            if current_prompt is None:
+                logger.error(f"agent {table_row.name} current_prompt: {current_prompt}")
             
             # Get MCP servers from relationship table instead of config
             mcp_servers_stmt = select(

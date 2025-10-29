@@ -21,6 +21,7 @@ from chainlit_web.ui_hook.autogen_chat_queue import AgentTypes
 import chainlit as cl
 from autogen_agentchat.messages import BaseAgentEvent, BaseChatMessage, TextMessage, ModelClientStreamingChunkEvent
 from autogen_agentchat.base import TaskResult
+from autogen_agentchat.base import Response
 
 # Type aliases following project guidelines
 InputFuncType = Optional[Callable[[str], Awaitable[str]]]
@@ -55,7 +56,10 @@ class UIAutoGenAgentChatQueue(CodeAgent):
         self._model_client_streaming = model_client_streaming
         self.streaming_event = False
         self._response: cl.Message | None = None
-    
+
+    async def start(self, cancellation_token = None, output_task_messages = True):
+        await super().start(cancellation_token, output_task_messages)
+
     async def handle_chat_message(self, message: BaseChatMessage) -> None:
         """Handle BaseChatMessage messages with Chainlit streaming"""
         if isinstance(message, TextMessage):                
@@ -73,6 +77,7 @@ class UIAutoGenAgentChatQueue(CodeAgent):
             if self._response:
                 await self._response.send()
         return await super()._dispatch_message(message)
+
     async def handle_agent_event(self, message: BaseAgentEvent) -> None:
         """Handle BaseAgentEvent messages"""
         pass
@@ -84,7 +89,9 @@ class UIAutoGenAgentChatQueue(CodeAgent):
             self._response = cl.Message(author=message.source, content="")
         await self._response.stream_token(message.to_text())
     
-    async def handle_response(self, message):
+    async def handle_response(self, message:Response):
+        if not self._response:
+            self._response=cl.Message(author=message.chat_message.source, content="")
         await self._response.send()
 
     async def handle_task_result(self, message: TaskResult) -> None:

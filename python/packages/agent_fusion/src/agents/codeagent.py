@@ -44,6 +44,7 @@ import warnings
 from autogen_core.tools import ToolResult, StaticStreamWorkbench
 from base.handoff import ToolType
 from contextlib import asynccontextmanager
+from python_agent_bridge import save_tool_result
 
 
 event_logger = logging.getLogger(EVENT_LOGGER_NAME)
@@ -80,6 +81,9 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         self._cancellation_token: CancellationToken |None = None
         self._reflect_on_tool_use = False
         self._handoff_tool_name : dict[str,str] | None = None
+        #used for bridge of python script and messages
+        self._instance_id :str = str(uuid.uuid4())
+        self._function_tool_results : List[str] = []
 
     @property
     def produced_message_types(self) -> Sequence[type[BaseChatMessage]]:
@@ -132,15 +136,15 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
 
     async def _dispatch_message(self, message: BaseAgentEvent | BaseChatMessage | TaskResult | Response) -> None:
         """Dispatch message to appropriate handler based on type"""
-        if isinstance(message, TaskResult):
+        if issubclass(type(message), TaskResult):
             await self.handle_task_result(message)
-        elif isinstance(message, Response):
+        elif issubclass(type(message), Response):
             await self.handle_response(message)
-        elif isinstance(message, ModelClientStreamingChunkEvent):
+        elif issubclass(type(message), ModelClientStreamingChunkEvent):
             await self.handle_streaming_chunk(message)
-        elif isinstance(message, BaseAgentEvent):
+        elif issubclass(type(message), BaseAgentEvent):
             await self.handle_agent_event(message)
-        elif isinstance(message, BaseChatMessage):
+        elif issubclass(type(message), BaseChatMessage):
             await self.handle_chat_message(message)
         else:
             await self.handle_unknown_message(message)
@@ -202,6 +206,10 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         modified_messages = []
         for msg in messages:
             # Find all code blocks and execute them in one pass
+            if not isinstance(msg.content, str):  # Only process TextMessages
+                modified_messages.append(msg)
+                continue
+
             pattern = r'```python(.*?)```'
             matches = list(re.finditer(pattern, msg.content, re.DOTALL))
 
@@ -264,14 +272,19 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as temp_file:
                 temp_file.write(code)
                 temp_file_path = temp_file.name
-            
+
             # Execute the Python code using subprocess
+            # Add environment variables for the subprocess
+            env = os.environ.copy()
+            env['AGENT_SESSION_ID'] = self._instance_id
+
             process = subprocess.Popen(
                 ['python', temp_file_path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                cwd=os.getcwd()
+                cwd=os.getcwd(),
+                env=env
             )
             
             stdout, stderr = process.communicate()
@@ -389,7 +402,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                         yield event
                 
                 executed_calls_and_results = await task
-                exec_results = [result for _, result in executed_calls_and_results]
+                exec_results: list[FunctionExecutionResult] = [result for _, result in executed_calls_and_results]
                 tool_call_result_msg = ToolCallExecutionEvent(
                     content=exec_results,
                     source=self.name,
@@ -406,6 +419,9 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                 if handoff_output:
                     yield handoff_output
                     return
+                
+                for exec_result in exec_results:
+                    save_tool_result(self._instance_id, exec_result.content)
             
             llm_messages = await self._get_compatible_context(self._model_client, self._model_context)
             tools =await self._get_tools_from_workbench(llm_messages)
@@ -761,14 +777,20 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as temp_file:
                 temp_file.write(code)
                 temp_file_path = temp_file.name
-            
+
             # Execute the Python code using subprocess
+            # Add environment variables for the subprocess
+            env = os.environ.copy()
+            env['AGENT_NAME'] = self.name
+            env['AGENT_SESSION_ID'] = str(id(self))
+
             process = subprocess.Popen(
                 ['python', temp_file_path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                cwd=os.getcwd()
+                cwd=os.getcwd(),
+                env=env
             )
             
             stdout, stderr = process.communicate()
