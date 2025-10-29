@@ -31,9 +31,9 @@ from builders.agent_builder import AgentBuilder
 from chainlit.types import ChatProfile
 from base.groupchat_queue import BaseChatQueue
 from autogen_core import CancellationToken
-from logging import getLogger
+import logging
 
-logger = getLogger("chainlit_web")
+logger = logging.getLogger("chainlit_web.users")
 
 MODEL_WIDGET_ID = "Model"  # 常量定义
 

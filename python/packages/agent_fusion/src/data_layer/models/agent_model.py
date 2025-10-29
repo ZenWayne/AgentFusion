@@ -25,9 +25,9 @@ from sqlalchemy.dialects.postgresql import JSONB
 from data_layer.models.llm_model import LLMModel
 
 from data_layer.base_data_layer import DBDataLayer
-from logging import getLogger
+import logging
 
-logger = getLogger("chainlit_web")
+logger = logging.getLogger("chainlit_web.agent_model")
 
 
 class AgentModel(ComponentModel, AgentBuilder):

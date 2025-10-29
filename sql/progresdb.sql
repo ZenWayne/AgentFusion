@@ -710,7 +710,6 @@ INSERT INTO model_clients (label, provider, component_type_id, description, mode
 
 -- Insert sample agents
 INSERT INTO agents (name, label, provider, component_type_id, description, model_client_id, agent_type, labels, input_func, handoff_tools, created_by) VALUES
-    ('prompt_refiner', 'prompt_refiner', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 'assistant_agent', ARRAY['prompt', 'refiner'], 'input', '[]'::jsonb, 1),
     ('executor', 'executor', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 'assistant_agent', ARRAY['executor', 'action'], 'input', '[]'::jsonb, 1),
     ('assistant_agent', 'assistant_agent', 'autogen_agentchat.agents.AssistantAgent', 1, '重构后的assistant_agent', 1, 'code_agent', ARRAY['agent', 'code_execution', 'python', 'development'], 'input', '[{"target": "user", "message": "Transfer to user"}]'::jsonb, 1),
     ('database_agent', 'database_agent', 'autogen_agentchat.agents.AssistantAgent', 1, '数据库助手，负责处理数据库相关的操作', 1, 'code_agent', ARRAY['database', 'agent'], 'input', '[{"target": "human_proxy", "message": "Transfer to user"}]'::jsonb, 1),
@@ -737,13 +736,12 @@ INSERT INTO mcp_servers (name, command, args, env, url, timeout, sse_read_timeou
 
 -- Insert sample agent-MCP server relationships
 INSERT INTO agent_mcp_servers (agent_id, mcp_server_id, created_by) VALUES
-    (1, 1, 1), -- prompt_refiner uses file_system_windows
-    (1, 3, 1), -- prompt_refiner uses file_system
-    (2, 1, 1), -- executor uses file_system_windows
-    (2, 2, 1), -- executor uses file_system_unix
-    (2, 3, 1), -- executor uses file_system
-    (3, 2, 1), -- assistant_agent uses file_system_unix
-    (4, 5, 1); -- database_agent uses database MCP server
+    (1, 1, 1), -- executor uses file_system_windows
+    (1, 3, 1), -- executor uses file_system
+    (2, 1, 1), -- assistant_agent uses file_system_windows
+    (2, 2, 1), -- assistant_agent uses file_system_unix
+    (2, 3, 1), -- assistant_agent uses file_system
+    (3, 5, 1), -- database_agent uses database_http MCP server
 
 -- Insert sample group chats based on config.json
 INSERT INTO group_chats (name, type, description, labels, selector_prompt, model_client, created_by) VALUES 
@@ -757,19 +755,17 @@ INSERT INTO group_chats (name, type, description, labels, selector_prompt, model
      'deepseek-chat_DeepSeek', 1);
 
 -- Insert sample group chat participants
-INSERT INTO group_chat_participants (group_chat_id, agent_id, participant_role, join_order, created_by) VALUES 
-    (1, 1, 'participant', 1, 1), -- file_system group: prompt_refiner
-    (2, 1, 'participant', 1, 1), -- prompt_flow group: prompt_refiner  
-    (2, 2, 'participant', 2, 1), -- prompt_flow group: executor
-    (3, 1, 'participant', 1, 1); -- hil group: prompt_refiner (assuming product_manager maps to agent id 1)
+INSERT INTO group_chat_participants (group_chat_id, agent_id, participant_role, join_order, created_by) VALUES
+    (1, 1, 'participant', 1, 1), -- file_system group: executor
+    (2, 1, 'participant', 1, 1), -- prompt_flow group: executor
+    (2, 2, 'participant', 2, 1), -- prompt_flow group: assistant_agent
+    (3, 1, 'participant', 1, 1); -- hil group: executor
 
 -- Insert sample prompts
-INSERT INTO prompts (prompt_id, name, category, subcategories, description, agent_id, created_by) VALUES 
-    ('prd_pt_v1', 'Product Requirements Document Template', 'agent', ARRAY['prd_pt'], 'Universal PRD framework generator', 1, 1),
-    ('ui_designer_pt_v1', 'UI Designer Prompt Template', 'agent', ARRAY['ui_designer_pt'], 'UI design assistant prompt', 2, 1),
-    ('prompt_refiner_system', 'Prompt Refiner System Message', 'agent', ARRAY['system_message'], 'System message for prompt refiner agent', 1, 1),
-    ('lyra_agent_prompt', 'lyra_agent', 'agent', ARRAY['default'], 'lyra_agent prompt', 5, 1),
-    ('python_agent_prompt', 'python_agent_prompt', 'agent', ARRAY['default'], 'python_agent prompt', 6, 1);
+-- INSERT INTO prompts (prompt_id, name, category, subcategories, description, agent_id, created_by) VALUES 
+--     ('prompt_refiner_system', 'Prompt Refiner System Message', 'agent', ARRAY['system_message'], 'System message for prompt refiner agent', 1, 1),
+--     ('lyra_agent_prompt', 'lyra_agent', 'agent', ARRAY['default'], 'lyra_agent prompt', 5, 1),
+--     ('python_agent_prompt', 'python_agent_prompt', 'agent', ARRAY['default'], 'python_agent prompt', 6, 1);
 
 -- Insert sample threads
 INSERT INTO threads (id, name, user_id, user_identifier, tags, thread_metadata) VALUES 

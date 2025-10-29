@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from data_layer.base_data_layer import DBDataLayer
 from data_layer.models.tables.prompt_table import PromptTable, PromptVersionTable
 from data_layer.models.tables.user_table import UserTable
+from data_layer.models.tables.agent_table import AgentTable
 
 # 配置日志
 logging.basicConfig(
@@ -168,6 +169,55 @@ class PromptImporter:
         logger.info(f"Found admin user ID: {user_id}")
         return user_id
 
+    async def find_agent_id_by_name(self, session: AsyncSession, prompt_name: str, category: str) -> Optional[int]:
+        """根据提示词名称或分类查找对应的agent_id"""
+        # 首先尝试根据提示词名称直接匹配agent名称
+        stmt = select(AgentTable.id).where(AgentTable.name == prompt_name)
+        result = await session.execute(stmt)
+        agent_id = result.scalar_one_or_none()
+
+        if agent_id:
+            logger.info(f"Found agent '{prompt_name}' with ID: {agent_id}")
+            return agent_id
+
+        # 如果没有直接匹配，尝试根据分类匹配
+        category_mapping = {
+            'agent': 'assistant_agent',
+            'database': 'database_agent',
+            'ui_design': 'ui_designer_agent',
+            'prd': 'prd_agent',
+            'coder': 'coder_agent',
+            'tester': 'tester_agent'
+        }
+
+        # 从分类名称中提取可能的agent类型
+        agent_type = None
+        for key, value in category_mapping.items():
+            if key in category.lower() or key in prompt_name.lower():
+                agent_type = value
+                break
+
+        if agent_type:
+            stmt = select(AgentTable.id).where(AgentTable.agent_type == agent_type).limit(1)
+            result = await session.execute(stmt)
+            agent_id = result.scalar_one_or_none()
+
+            if agent_id:
+                logger.info(f"Found agent by type '{agent_type}' with ID: {agent_id}")
+                return agent_id
+
+        # 如果还是找不到，尝试查找第一个可用的agent
+        stmt = select(AgentTable.id).limit(1)
+        result = await session.execute(stmt)
+        agent_id = result.scalar_one_or_none()
+
+        if agent_id:
+            logger.info(f"Using first available agent with ID: {agent_id}")
+            return agent_id
+
+        logger.warning(f"No agent found for prompt '{prompt_name}' (category: {category})")
+        return None
+
     async def get_next_version_number(self, session: AsyncSession, prompt_table_id: int) -> int:
         """获取下一个版本号"""
         stmt = select(
@@ -252,6 +302,7 @@ class PromptImporter:
 
             async with await self.db.get_session() as session:
                 admin_user_id = await self.get_admin_user_id(session)
+                agent_id = await self.find_agent_id_by_name(session, prompt_name, category)
 
                 # 检查提示词是否已存在
                 existing_prompt_id = await self.prompt_exists(session, prompt_name)
@@ -265,8 +316,9 @@ class PromptImporter:
                 if not existing_prompt_id:
                     new_prompt = PromptTable(
                         prompt_id=f"{prompt_name}_prompt",
-                        name=prompt_name,
+                        name=prompt_name,  # 确保name与文件名一致
                         category=category,
+                        agent_id=agent_id,  # 分配对应的agent_id
                         created_by=admin_user_id,
                         updated_by=admin_user_id
                     )
@@ -274,17 +326,25 @@ class PromptImporter:
                     await session.flush()  # 获取ID
                     existing_prompt_id = new_prompt.id
                     self.stats['created_prompts'] += 1
-                    logger.info(f"Created new prompt: {prompt_name}")
+                    logger.info(f"Created new prompt: {prompt_name} (agent_id: {agent_id})")
                 else:
+                    # 更新现有记录时，确保agent_id和name保持一致
+                    await session.execute(
+                        update(PromptTable).where(PromptTable.id == existing_prompt_id).values(
+                            name=prompt_name,  # 确保名称一致
+                            agent_id=agent_id,  # 更新agent_id
+                            updated_by=admin_user_id
+                        )
+                    )
                     self.stats['updated_prompts'] += 1
-                    logger.info(f"Updating existing prompt: {prompt_name}")
+                    logger.info(f"Updating existing prompt: {prompt_name} (agent_id: {agent_id})")
 
                 # 获取下一个版本号
                 next_version = await self.get_next_version_number(session, existing_prompt_id)
 
-                # 创建新版本
+                # 创建新版本，确保prompt_version.prompt_id与prompt.id匹配
                 new_version = PromptVersionTable(
-                    prompt_id=existing_prompt_id,
+                    prompt_id=existing_prompt_id,  # 外键引用prompts.id
                     version_number=next_version,
                     content=content,
                     content_hash=content_hash,
@@ -298,7 +358,7 @@ class PromptImporter:
                     await session.execute(
                         update(PromptVersionTable).where(
                             and_(
-                                PromptVersionTable.prompt_id == existing_prompt_id,
+                                PromptVersionTable.prompt_id == existing_prompt_id,  # 确保外键关系正确
                                 PromptVersionTable.version_number < next_version
                             )
                         ).values(is_current=False)
@@ -307,7 +367,7 @@ class PromptImporter:
 
                 await session.commit()
                 self.stats['created_versions'] += 1
-                logger.info(f"Successfully imported {prompt_name} version {next_version}")
+                logger.info(f"Successfully imported {prompt_name} version {next_version} (prompt.id: {existing_prompt_id}, prompt_version.prompt_id: {existing_prompt_id})")
                 return True
 
         except Exception as e:
