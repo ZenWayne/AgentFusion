@@ -322,7 +322,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             self._handoff_tool_name = { 
                 tool["name"]: tool["target"] for wb in self._workbench 
                 for tool in await wb.list_tools() 
-                if tool.get("type", None) == ToolType.HANDOFF_TOOL }
+                if tool.get("type", None) != ToolType.NORMAL_TOOL }
 
         async for create_result_or_stream_event in self._call_llm(message_id, llm_messages, tools, cancellation_token):
             if isinstance(create_result_or_stream_event, CreateResult):

@@ -4,6 +4,7 @@ from .model_info import model_client as model_client_label
 from enum import Enum
 from typing import Annotated, Any, Callable
 from typing_extensions import Literal
+from base.handoff import ToolType
 
 class InputFuncType(str, Enum):
     INPUT = "input"
@@ -16,6 +17,8 @@ class AgentType(str, Enum):
     CODE_AGENT = "code_agent"
 
 class HandoffTools(BaseModel):
+    handoff_type: ToolType = Field(default=ToolType.HANDOFF_TOOL)
+    "type of handoff tools refer to base.handoff.ToolType"
     target :str
     "the target to be handed off"
     message: str

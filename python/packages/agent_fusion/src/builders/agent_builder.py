@@ -66,8 +66,13 @@ class AgentBuilder:
 
             # Add handoff tools if defined
             if agent_info.handoff_tools:
-                for handoff_tool in agent_info.handoff_tools:
-                    tools += [HandoffWithType(target=handoff_tool.target, message=handoff_tool.message).handoff_tool]
+                tools.extend([
+                    HandoffWithType(
+                    handoff_type=handoff_tool.handoff_type, 
+                    target=handoff_tool.target, 
+                    message=handoff_tool.message).handoff_tool
+                    for handoff_tool in agent_info.handoff_tools
+                ])
             #tools.append(retrieve_filesystem_tool())
             model_client_config = await model_client_builder.get_component_by_name(agent_info.model_client)
             async with model_client_builder.build(model_client_config) as model_client:

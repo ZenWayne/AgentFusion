@@ -7,6 +7,7 @@ from autogen_core.tools._base import ToolSchema
 
 class ToolType(StrEnum):
     HANDOFF_TOOL = "handoff_tool"
+    HANDOFF_TOOL_CODE = "handoff_tool_code"
     NORMAL_TOOL = "normal_tool"
 
 
@@ -40,6 +41,7 @@ class HandoffFunctionToolWithType(FunctionToolWithType):
     def __init__(self, *args, **kwargs):
         self.target = kwargs.pop("target", "next_agent")
         super().__init__(*args, **kwargs)
+
     @property
     def schema(self) -> TypedToolSchema:
         base_ret = super().schema
