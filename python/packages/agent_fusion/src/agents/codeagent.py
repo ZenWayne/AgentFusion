@@ -83,8 +83,11 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         self._handoff_tool_name : dict[str,str] | None = None
         #used for bridge of python script and messages
         self._instance_id :str = str(uuid.uuid4())
-        self._function_tool_results : List[str] = []
+        self._tool_results_dir = tempfile.mkdtemp()
 
+    async def close(self): 
+        super().close()
+        os.remove(self._tool_results_dir)
     @property
     def produced_message_types(self) -> Sequence[type[BaseChatMessage]]:
         """Get the types of messages this agent can produce.
@@ -202,84 +205,81 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         
         return code_blocks
 
-    async def _check_and_execute_code(self, messages: List[LLMMessage]) -> List[LLMMessage]:
-        modified_messages = []
-        for msg in messages:
-            # Find all code blocks and execute them in one pass
-            if not isinstance(msg.content, str):  # Only process TextMessages
-                modified_messages.append(msg)
-                continue
+    async def _check_and_execute_code(self, msg: LLMMessage) -> LLMMessage:
+        # Find all code blocks and execute them in one pass
+        if not isinstance(msg.content, str):  # Only process TextMessages
+            return msg
 
-            pattern = r'```python(.*?)```'
-            matches = list(re.finditer(pattern, msg.content, re.DOTALL))
+        pattern = r'```python(.*?)```'
+        matches = list(re.finditer(pattern, msg.content, re.DOTALL))
 
-            if not matches:
-                # No code blocks, return original message
-                modified_messages.append(msg)
-                continue
+        if not matches:
+            # No code blocks, return original message
+            return msg
 
-            # Execute all code blocks
-            execution_results = []
-            for match in matches:
-                code_content = match.group(1).strip()
-                if code_content:
-                    result = await self._execute_python_code(code_content)
-                    execution_results.append(result)
-                else:
-                    execution_results.append(None)
+        # Execute all code blocks
+        execution_results = []
+        for match in matches:
+            code_content = match.group(1).strip()
+            if code_content:
+                result = await self._execute_python_code(code_content)
+                execution_results.append(result)
+            else:
+                execution_results.append(None)
 
-            #CR using string here and assigning to msg.content
-            modified_content = msg.content
-            offset = 0
+        #CR using string here and assigning to msg.content
+        modified_content = msg.content
+        offset = 0
 
-            for i, match in enumerate(matches):
-                if execution_results[i] is not None:
-                    result = execution_results[i]
-                    stdout = result.get('stdout', '')
-                    stderr = result.get('stderr', '')
+        for i, match in enumerate(matches):
+            if execution_results[i] is not None:
+                result = execution_results[i]
+                stdout = result.get('stdout', '')
+                stderr = result.get('stderr', '')
 
-                    # Build the code_result block with XML tags
-                    result_parts = []
-                    if stdout:
-                        result_parts.append(f"<stdout>{stdout}</stdout>")
-                    if stderr:
-                        result_parts.append(f"<stderr>{stderr}</stderr>")
+                # Build the code_result block with XML tags
+                result_parts = []
+                if stdout:
+                    result_parts.append(f"<stdout>{stdout}</stdout>")
+                if stderr:
+                    result_parts.append(f"<stderr>{stderr}</stderr>")
 
-                    if result_parts:
-                        result_block = f"\n```result\n" + "\n".join(result_parts) + "\n```"
+                if result_parts:
+                    result_block = f"\n```result\n" + "\n".join(result_parts) + "\n```"
 
-                        # Adjust match positions for the offset
-                        start_pos = match.start() + offset
-                        end_pos = match.end() + offset
+                    # Adjust match positions for the offset
+                    start_pos = match.start() + offset
+                    end_pos = match.end() + offset
 
-                        # Insert result after the code block
-                        modified_content = modified_content[:end_pos] + result_block + modified_content[end_pos:]
-                        offset += len(result_block)
-                modified_messages.append(AssistantMessage(
-                    content=modified_content,
-                    source=self.name
-                ))
+                    # Insert result after the code block
+                    modified_content = modified_content[:end_pos] + result_block + modified_content[end_pos:]
+                    offset += len(result_block)
+            ret=AssistantMessage(
+                content=modified_content,
+                source=self.name
+            )
 
-        return modified_messages
+        return ret
 
-    
     async def _execute_python_code(self, code: str) -> dict:
         """
         Execute Python code in a subprocess and capture stdout, stderr, and return code
         """
         try:
             # Create a temporary file with the Python code
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as temp_file:
-                temp_file.write(code)
-                temp_file_path = temp_file.name
+            # with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as temp_file:
+            #     temp_file.write(code)
+            #     temp_file_path = temp_file.name
 
             # Execute the Python code using subprocess
             # Add environment variables for the subprocess
             env = os.environ.copy()
+            env['AGENT_NAME'] = self.name
             env['AGENT_SESSION_ID'] = self._instance_id
+            env['TOOL_RESULTS_DIR'] = self._tool_results_dir
 
             process = subprocess.Popen(
-                ['python', temp_file_path],
+                ['python', '-c', code],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -301,13 +301,6 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                 'stderr': f'Execution error: {str(e)}',
                 'returncode': -1
             }
-        finally:
-            # Clean up the temporary file
-            try:
-                if 'temp_file_path' in locals():
-                    os.unlink(temp_file_path)
-            except OSError:
-                pass
 
     async def on_messages_stream(
         self, messages: Sequence[BaseChatMessage], cancellation_token: CancellationToken
@@ -317,12 +310,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         
         # Add new messages to context
         for message in messages:
-            await self._model_context.add_message(message.to_model_message())
-
-        # Check and execute code blocks in the messages
-        modified_messages=await self._check_and_execute_code(messages)
-        if modified_messages and len(modified_messages) > 0:
-            messages = modified_messages       
+            await self._model_context.add_message(message.to_model_message())      
 
         # Call LLM
         llm_messages = await self._get_compatible_context(self._model_client, self._model_context)
@@ -359,13 +347,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         )
 
         # Process code execution if present
-        modified_messages = await self._check_and_execute_code([assistant_message])
-        processed_message = assistant_message  # Default to original message
-        if modified_messages and len(modified_messages) > 0:
-            # Use the modified message with execution results
-            processed_message = modified_messages[0]
-            # Update the model_result content with execution results
-            model_result.content = processed_message.content
+        processed_message = await self._check_and_execute_code(assistant_message)
 
         # Add the (possibly modified) assistant message to the model context
         await self._model_context.add_message(processed_message)
@@ -421,7 +403,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                     return
                 
                 for exec_result in exec_results:
-                    save_tool_result(self._instance_id, exec_result.content)
+                    save_tool_result(self._tool_results_dir, self._instance_id, exec_result.content)
             
             llm_messages = await self._get_compatible_context(self._model_client, self._model_context)
             tools =await self._get_tools_from_workbench(llm_messages)
@@ -438,14 +420,15 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                 thought_event = ThoughtEvent(content=model_result.thought, source=self.name)
                 yield thought_event
 
-            #TODO yield thought event
-            await self._model_context.add_message(
-                AssistantMessage(
-                    content=model_result.content,
-                    source=self.name,
-                    thought=getattr(model_result, "thought", None),
-                )
+            assistant_message = AssistantMessage(
+                content=model_result.content,
+                source=self.name,
+                thought=getattr(model_result, "thought", None),
             )
+            processed_message = await self._check_and_execute_code(assistant_message)
+            #TODO yield thought event
+            await self._model_context.add_message(processed_message)
+
         # If we exit the loop without returning, provide final response
         yield self._output_llm_response(model_result, message_id)
 
@@ -641,97 +624,6 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
 
         yield model_result
 
-
-    async def _call_llm_with_code_monitoring(
-        self, 
-        cancellation_token: CancellationToken, 
-        message_id: str
-    ) -> AsyncGenerator[BaseAgentEvent | BaseChatMessage | Response, None]:
-        """Call LLM and monitor streaming output for code blocks"""
-        if not self._model_context:
-            return
-        
-        # Get all messages from context
-        all_messages = await self._model_context.get_messages()
-        
-        # Get compatible context (simplified, no vision handling needed)
-        if self._model_client.model_info["vision"]:
-            llm_messages = all_messages
-        else:
-            llm_messages = remove_images(all_messages)
-        
-        # Code monitoring state
-        code_buffer = ""
-        in_code_block = False
-        full_response = ""
-        
-        try:
-            # Stream LLM response
-            async for chunk in self._model_client.create_stream(
-                llm_messages, 
-                tools=[],  # No tools needed as per CR
-                cancellation_token=cancellation_token
-            ):
-                if isinstance(chunk, CreateResult):
-                    # Final response - process any remaining code
-                    if in_code_block and code_buffer.strip():
-                        # Execute the final code block
-                        execution_result = await self._execute_python_code(code_buffer)
-                        tool_use_msg = TextMessage(
-                            content=f"Code execution result:\n{self._format_single_execution_result(code_buffer, execution_result)}", 
-                            source=self.name
-                        )
-                        yield tool_use_msg
-                    
-                    # Final response
-                    response_content = chunk.content
-                    response_msg = TextMessage(content=response_content, source=self.name)
-                    await self._model_context.add_message(response_msg)
-                    yield Response(chat_message=response_msg)
-                    
-                elif isinstance(chunk, str):
-                    # Monitor streaming chunk for code blocks
-                    full_response += chunk
-                    
-                    # Check for code block start/end
-                    if not in_code_block and "<code>" in chunk:
-                        in_code_block = True
-                        # Find the start of code content after <code> tag
-                        code_start_idx = chunk.find("<code>") + len("<code>")
-                        code_buffer = chunk[code_start_idx:]
-                    elif in_code_block:
-                        if "</code>" in chunk:
-                            # End of code block found
-                            code_end_idx = chunk.find("</code>")
-                            code_buffer += chunk[:code_end_idx]
-                            
-                            # Execute the complete code block
-                            if code_buffer.strip():
-                                execution_result = await self._execute_python_code(code_buffer)
-                                tool_use_msg = TextMessage(
-                                    content=f"Code execution result:\n{self._format_single_execution_result(code_buffer, execution_result)}", 
-                                    source=self.name
-                                )
-                                yield tool_use_msg
-                            
-                            # Reset code monitoring state
-                            in_code_block = False
-                            code_buffer = ""
-                        else:
-                            # Continue buffering code content
-                            code_buffer += chunk
-                    
-                    # Always yield the streaming chunk for real-time display
-                    yield ModelClientStreamingChunkEvent(
-                        content=chunk, 
-                        source=self.name, 
-                        full_message_id=message_id
-                    )
-                    
-        except Exception as e:
-            error_msg = TextMessage(content=f"LLM call failed: {str(e)}", source=self.name)
-            yield Response(chat_message=error_msg)
-
     async def _get_compatible_context(self, model_client: ChatCompletionClient, model_context: ChatCompletionContext) -> Sequence[LLMMessage]:
         """Get compatible context - simplified without vision handling"""
         messages = await model_context.get_messages()
@@ -767,53 +659,5 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         if self._model_context:
             await self._model_context.clear()
         self._is_running = False
-    
-    async def _execute_python_code(self, code: str) -> dict:
-        """
-        Execute Python code in a subprocess and capture stdout, stderr, and return code
-        """
-        try:
-            # Create a temporary file with the Python code
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as temp_file:
-                temp_file.write(code)
-                temp_file_path = temp_file.name
-
-            # Execute the Python code using subprocess
-            # Add environment variables for the subprocess
-            env = os.environ.copy()
-            env['AGENT_NAME'] = self.name
-            env['AGENT_SESSION_ID'] = str(id(self))
-
-            process = subprocess.Popen(
-                ['python', temp_file_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                cwd=os.getcwd(),
-                env=env
-            )
-            
-            stdout, stderr = process.communicate()
-            
-            return {
-                'stdout': stdout or '(no output)',
-                'stderr': stderr or '(no errors)',
-                'returncode': process.returncode
-            }
-        
-        except Exception as e:
-            return {
-                'stdout': '',
-                'stderr': f'Execution error: {str(e)}',
-                'returncode': -1
-            }
-        finally:
-            # Clean up the temporary file
-            try:
-                if 'temp_file_path' in locals():
-                    os.unlink(temp_file_path)
-            except OSError:
-                pass
-    
 
 

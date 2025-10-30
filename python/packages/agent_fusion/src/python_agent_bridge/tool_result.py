@@ -1,10 +1,13 @@
 import os
 import tempfile
+import logging
+import json
 
-def save_tool_result(agent_session_id: str, tool_result: str) -> None:
+def save_tool_result(tool_result_dir, agent_session_id: str, tool_result: str) -> None:
     """Save the result of a tool to a file. save to folder under temperory folder
 
     Args:
+        tool_result_dir: The directory to save the tool result to
         tool_name: The name of the tool that generated the result
         tool_result: The result/content from the tool execution
         agent_session_id: The session ID for the agent (used as file prefix)
@@ -13,7 +16,7 @@ def save_tool_result(agent_session_id: str, tool_result: str) -> None:
         OSError: If unable to create directory or write file
         IOError: If unable to write to the file
     """
-    tool_results_dir = os.path.join(tempfile.gettempdir(), "tool_results", agent_session_id)
+    tool_results_dir = os.path.join(tool_result_dir, "tool_results", agent_session_id)
 
     # Ensure tool_results directory exists
     try:
@@ -33,10 +36,13 @@ def save_tool_result(agent_session_id: str, tool_result: str) -> None:
     filename = f"{num_files}.txt"
     tool_result_file = os.path.join(tool_results_dir, filename)
 
+    logging.info(f"Saving tool result to {tool_result_file}")
     # Write only the tool result content
     try:
+        tool_result=json.loads(tool_result)
+        call_result=tool_result[0].get("text")
         with open(tool_result_file, 'w', encoding='utf-8') as f:
-            f.write(tool_result)
+            f.write(call_result)
     except IOError as e:
         raise IOError(f"Unable to write tool result to file {tool_result_file}: {e}")
 
@@ -56,12 +62,13 @@ def get_tool_result(index: int) -> str:
         IOError: If unable to read the file
     """
     # Get agent session ID from environment variable
+    tool_results_dir = os.getenv('TOOL_RESULTS_DIR')
     agent_session_id = os.getenv('AGENT_SESSION_ID')
 
     if not agent_session_id:
         raise ValueError("AGENT_SESSION_ID environment variable is not set")
 
-    tool_results_dir = os.path.join(tempfile.gettempdir(), "tool_results", agent_session_id)
+    tool_results_dir = os.path.join(tool_results_dir, "tool_results", agent_session_id)
 
     # Get files for this session
     try:
@@ -78,6 +85,6 @@ def get_tool_result(index: int) -> str:
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
-        return content
+        return json.loads(content)
     except IOError as e:
         raise IOError(f"Unable to read tool result file {file_path}: {e}")
