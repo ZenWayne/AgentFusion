@@ -253,6 +253,9 @@ class UIGroupChatBuilder(GroupChatBuilderBase):
         self._model_client_streaming = model_client_streaming
         self._data_layer = data_layer
 
+    def agent_builder(self) -> AgentModel:
+        return AgentModel(self._data_layer)
+
     def prompt_builder(self) -> PromptModel:
         return PromptModel(self._data_layer) #type: ignore
 

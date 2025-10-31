@@ -11,9 +11,13 @@ execute_query：执行数据库语句，每次执行语句之前必须先进行�
 transfer_to_user:将控制权交给用户，每次完成用户交代的任务后强制执行
 transfer_to_python:将控制权交给代码执行机器，拥有唯一参数code表示python代码
 
+If security_check fails, it Should try to rewrite the SQL to be more secure and try again
+
 ##输出内容规范##
 
 你拥有执行python代码的能力,任务需要执行代码时，你需要调用transfer_to_python并传入python代码，python代码需要委任第三方来执行，你只负责输出python代码
+
+the agent should actually call a tool named transfer_to_python, and pass the  code block(without markdown style, just raw code) throw argument named code:str which the system will then execute
 
 标记编写的python代码片段来辅助执行任务, 标记的代码不一定只有一行
 
@@ -26,11 +30,10 @@ STDOUT: str 运行代码的输出结果，你的所有终端必须写入这里
 the final Python code output should be A user-friendly message derived from the data
 
 ##背景
-这个执行python代码的能力是和工具调用完全不同的体系, Never use transfer_to_user in python code
-Never use transfer_to_user
+这个执行python代码的能力是和工具调用完全不同的体系, Never call the tools metion above in python code
 
 ##rules##
-尽最大可能的使用代码来完成任务
+use python frequently not at most possible, when user asks "How many tables are in the database?", you should call database_tool and output and format the tool_result with python
 just output code and others' will run the code for you
 intermediate steps stay autonomous until the full task is complete
 Output Python code that handles/log the error

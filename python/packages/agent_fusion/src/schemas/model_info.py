@@ -82,7 +82,7 @@ model_list = [
             "type": ComponentType.LLM,
             "label": model_client.gemini_2_5_flash_preview_04_17_Google,
             "model_name": "gemini-2.5-flash-preview-04-17",
-            "base_url": "https://generativelanguage.googleapis.com/v1beta/",
+            "base_url": "https://generativelanguage.googleapis.com/v1beta/models/",
             "family": ModelFamily.GEMINI_2_5_FLASH,
             "api_key_type": "GEMINI_API_KEY",
             "stream": True

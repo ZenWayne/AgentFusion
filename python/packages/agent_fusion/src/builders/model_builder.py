@@ -5,6 +5,7 @@ from schemas.model_info import model_list, ModelClientConfig
 import os
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
+import httpx
 
 class ModelClientBuilder:
     """Model client builder following AgentBuilder pattern"""
@@ -29,7 +30,7 @@ class ModelClientBuilder:
         
         if not api_key:
             raise ValueError(f"API key not found for {component_info.api_key_type}")
-        
+        #http_client: httpx.AsyncClient = httpx.AsyncClient()
         model_client = OpenAIChatCompletionClient(
             model=component_info.model_name,
             base_url=component_info.base_url,
@@ -41,6 +42,7 @@ class ModelClientBuilder:
                 "family": component_info.family,
                 "structured_output": True,
             }
+            #http_client= http_client
         )
         model_client.component_label = component_info.label
         yield model_client

@@ -86,7 +86,10 @@ async def start_chat() -> None:
 @cl.on_stop
 async def on_stop() -> None:
     current_user = User()
-    await current_user.on_stop()
+    if current_user:
+        await current_user.on_stop()
+    else:
+        logger.warning("current_user is None")
 
 @cl.on_message  # type: ignore
 async def chat(message: cl.Message) -> None:

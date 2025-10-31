@@ -700,20 +700,22 @@ INSERT INTO component_types (name, description) VALUES
     ('chat_completion_context', 'Chat completion context component');
 
 -- Insert sample model clients based on the config
-INSERT INTO model_clients (label, provider, component_type_id, description, model_name, base_url, api_key_type, model_info, created_by) VALUES 
+INSERT INTO model_clients (label, provider, component_type_id, description, model_name, base_url, api_key_type, model_info, created_by) VALUES
     ('deepseek-chat_DeepSeek', 'autogen_ext.models.openai.OpenAIChatCompletionClient', 2, 'Chat completion client for OpenAI hosted models.', 'deepseek-chat', 'https://api.deepseek.com/v1', 'DEEPSEEK_API_KEY',
      '{"vision": false, "function_calling": true, "json_output": true, "family": "r1"}'::jsonb, 1),
     ('qwq-32b_Aliyun', 'autogen_ext.models.openai.OpenAIChatCompletionClient', 2, 'Chat completion client for OpenAI hosted models.', 'qwq-32b', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'DASHSCOPE_API_KEY',
      '{"vision": false, "function_calling": true, "json_output": true, "family": "r1"}'::jsonb, 1),
     ('qwen3-max_Aliyun', 'autogen_ext.models.openai.OpenAIChatCompletionClient', 2, 'Chat completion client for OpenAI hosted models.', 'qwen3-max', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'DASHSCOPE_API_KEY',
-     '{"vision": false, "function_calling": true, "json_output": true, "family": "r1"}'::jsonb, 1);
+     '{"vision": false, "function_calling": true, "json_output": true, "family": "r1"}'::jsonb, 1),
+    ('gemini_2_5_pro_Google', 'autogen_ext.models.openai.OpenAIChatCompletionClient', 2, 'Google Gemini 2.5 Pro model with streaming support', 'gemini-2.5-pro', 'https://generativelanguage.googleapis.com/v1beta/models/', 'GEMINI_API_KEY',
+     '{"vision": false, "function_calling": true, "json_output": true, "family": "GEMINI_2_5_PRO", "stream": true}'::jsonb, 1);
 
 -- Insert sample agents
 INSERT INTO agents (name, label, provider, component_type_id, description, model_client_id, agent_type, labels, input_func, handoff_tools, created_by) VALUES
     ('executor', 'executor', 'autogen_agentchat.agents.AssistantAgent', 1, 'An agent that provides assistance with tool use.', 1, 'assistant_agent', ARRAY['executor', 'action'], 'input', '[]'::jsonb, 1),
     ('assistant_agent', 'assistant_agent', 'autogen_agentchat.agents.AssistantAgent', 1, '重构后的assistant_agent', 1, 'code_agent', ARRAY['agent', 'code_execution', 'python', 'development'], 'input', '[{"target": "user", "message": "Transfer to user"}]'::jsonb, 1),
     ('database_agent', 'database_agent', 'autogen_agentchat.agents.AssistantAgent', 1, '数据库助手，负责处理数据库相关的操作', 1, 'code_agent', ARRAY['database', 'agent'], 'input', '[{"target": "user", "message": "Transfer to user"}]'::jsonb, 1),
-    ('lyra_agent', 'lyra_agent', 'autogen_agentchat.agents.AssistantAgent', 1, 'AI提示词优化专家，使用4-D方法论将用户输入转化为精确有效的提示词', 3, 'code_agent', ARRAY['prompt', 'optimization', 'lyra', 'ai'], 'input', '[{"target": "user", "message": "Transfer to user"}]'::jsonb, 1),
+    ('lyra_agent', 'lyra_agent', 'autogen_agentchat.agents.AssistantAgent', 1, 'AI提示词优化专家，使用4-D方法论将用户输入转化为精确有效的提示词', 4, 'code_agent', ARRAY['prompt', 'optimization', 'lyra', 'ai'], 'input', '[{"target": "user", "message": "Transfer to user"}]'::jsonb, 1),
     ('python_agent', 'python_agent', 'autogen_agentchat.agents.AssistantAgent', 1, 'Python code execution assistant that generates and executes Python code solutions wrapped in markdown blocks to complete computational tasks programmatically', 3, 'code_agent', ARRAY['python', 'code_execution', 'development', 'automation', 'analysis'], 'input', '[{"target": "user", "message": "Transfer to user"}]'::jsonb, 1);
 
 -- Insert sample MCP servers based on config.json
@@ -738,9 +740,7 @@ INSERT INTO mcp_servers (name, command, args, env, url, timeout, sse_read_timeou
 INSERT INTO agent_mcp_servers (agent_id, mcp_server_id, created_by) VALUES
     (1, 1, 1), -- executor uses file_system_windows
     (1, 3, 1), -- executor uses file_system
-    (2, 1, 1), -- assistant_agent uses file_system_windows
     (2, 2, 1), -- assistant_agent uses file_system_unix
-    (2, 3, 1), -- assistant_agent uses file_system
     (3, 5, 1), -- database_agent uses database_http MCP server
 
 -- Insert sample group chats based on config.json
