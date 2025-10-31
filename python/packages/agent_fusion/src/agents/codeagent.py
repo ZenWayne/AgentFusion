@@ -42,9 +42,9 @@ import json
 from typing import Any
 import warnings
 from autogen_core.tools import ToolResult, StaticStreamWorkbench
-from base.handoff import ToolType
-from contextlib import asynccontextmanager
-from python_agent_bridge import save_tool_result
+from base.handoff import ToolType, FunctionToolWithType
+from autogen_agentchat.base import Handoff
+from tools.handoff import HandoffCodeFunctionToolWithType
 
 
 event_logger = logging.getLogger(EVENT_LOGGER_NAME)
@@ -81,13 +81,6 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         self._cancellation_token: CancellationToken |None = None
         self._reflect_on_tool_use = False
         self._handoff_tool_name : dict[str,str] | None = None
-        #used for bridge of python script and messages
-        self._instance_id :str = str(uuid.uuid4())
-        self._tool_results_dir = tempfile.mkdtemp()
-
-    async def close(self): 
-        super().close()
-        os.remove(self._tool_results_dir)
     @property
     def produced_message_types(self) -> Sequence[type[BaseChatMessage]]:
         """Get the types of messages this agent can produce.
@@ -189,6 +182,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                 tools.extend(wb.get_tools_for_context(text_messages))
             else:
                 tools.extend(await wb.list_tools())
+
         return tools
     
     async def _extract_code_blocks(self, content: str) -> List[str]:
@@ -322,7 +316,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             self._handoff_tool_name = { 
                 tool["name"]: tool["target"] for wb in self._workbench 
                 for tool in await wb.list_tools() 
-                if tool.get("type", None) != ToolType.NORMAL_TOOL }
+                if tool.get("type", None) in [ToolType.HANDOFF_TOOL, ToolType.HANDOFF_TOOL_CODE ]  }
 
         async for create_result_or_stream_event in self._call_llm(message_id, llm_messages, tools, cancellation_token):
             if isinstance(create_result_or_stream_event, CreateResult):
@@ -347,10 +341,10 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         )
 
         # Process code execution if present
-        processed_message = await self._check_and_execute_code(assistant_message)
+        #processed_message = await self._check_and_execute_code(assistant_message)
 
         # Add the (possibly modified) assistant message to the model context
-        await self._model_context.add_message(processed_message)
+        await self._model_context.add_message(assistant_message)
 
         for loop_iteration in range(1,self._max_tool_iterations):            
             assert create_result_or_stream_event is not None, "No model result was produced."
@@ -393,6 +387,9 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                 await self._model_context.add_message(FunctionExecutionResultMessage(content=exec_results))
                 yield tool_call_result_msg
 
+                for exec_result in exec_results:
+                    await self._save_tool_result(exec_result.content)
+
                 handoff_output = self._check_and_handle_handoff(
                     model_result=model_result,
                     executed_calls_and_results=executed_calls_and_results,
@@ -402,8 +399,6 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                     yield handoff_output
                     return
                 
-                for exec_result in exec_results:
-                    save_tool_result(self._tool_results_dir, self._instance_id, exec_result.content)
             
             llm_messages = await self._get_compatible_context(self._model_client, self._model_context)
             tools =await self._get_tools_from_workbench(llm_messages)
@@ -425,12 +420,26 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                 source=self.name,
                 thought=getattr(model_result, "thought", None),
             )
-            processed_message = await self._check_and_execute_code(assistant_message)
+            #processed_message = await self._check_and_execute_code(assistant_message)
             #TODO yield thought event
-            await self._model_context.add_message(processed_message)
+            await self._model_context.add_message(assistant_message)
 
         # If we exit the loop without returning, provide final response
         yield self._output_llm_response(model_result, message_id)
+    async def _save_tool_result(self, tool_result: str) -> None:
+        handoff_code_tool : dict[str, HandoffCodeWithType] = [
+            tool for wb in self._workbench 
+            for tool in wb._tools 
+            if isinstance(tool, HandoffCodeFunctionToolWithType)
+        ]
+        for handoff_tool in handoff_code_tool:
+            try:
+                tool_result=json.loads(tool_result)
+                call_result=json.loads(tool_result[0].get("text"))
+                handoff_tool._tool_results.append(call_result)
+            except Exception as e:
+                logging.error(f"Error parsing tool result: {e}")
+
 
     def _check_and_handle_handoff(
         self,

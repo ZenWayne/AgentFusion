@@ -16,9 +16,10 @@ from autogen_agentchat.base import Handoff
 from autogen_ext.tools.mcp import McpWorkbench
 from autogen_core.model_context import ChatCompletionContext
 from contextlib import AsyncExitStack
-from tools.handoff import HandoffWithType
+from tools.handoff import HandoffWithTypeRaw, HandoffCodeWithType, HandoffType
 from tools.workbench import VectorStreamWorkbench
 from tools.retrieve import retrieve_filesystem_tool
+from tools.handoff import ToolType
 
 class AgentBuilder:
     def __init__(self, input_func: Callable[[str], Awaitable[str]] | None = input, context: ChatCompletionContext | None = None):
@@ -42,6 +43,14 @@ class AgentBuilder:
             AgentTypeEnum.CODE_AGENT: TypedCodeAgent,
         }[agent_type_enum]
 
+    def _handoff_map(self, handoff_type: ToolType, target: str, message: str) -> Type[HandoffType]:
+        """Map handoff type to handoff class"""
+        cls_dict= {
+            ToolType.HANDOFF_TOOL: HandoffWithTypeRaw,
+            ToolType.HANDOFF_TOOL_CODE: HandoffCodeWithType,
+        }
+
+        return cls_dict[handoff_type](handoff_type=handoff_type, target=target, message=message)
     @asynccontextmanager
     async def build(self, agent_info: AssistantAgentConfig| UserProxyAgentConfig) -> AsyncGenerator[AssistantAgent | UserProxyAgent, None]:
         # Use dynamic class mapping for type-safe agent creation
@@ -67,10 +76,7 @@ class AgentBuilder:
             # Add handoff tools if defined
             if agent_info.handoff_tools:
                 tools.extend([
-                    HandoffWithType(
-                    handoff_type=handoff_tool.handoff_type, 
-                    target=handoff_tool.target, 
-                    message=handoff_tool.message).handoff_tool
+                    self._handoff_map(handoff_tool.handoff_type, target=handoff_tool.target, message=handoff_tool.message).handoff_tool
                     for handoff_tool in agent_info.handoff_tools
                 ])
             #tools.append(retrieve_filesystem_tool())
