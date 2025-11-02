@@ -7,6 +7,9 @@ from pydantic import BaseModel, Field
 
 from base.handoff import ToolType, HandoffFunctionToolWithType
 
+from contextlib import redirect_stdout, redirect_stderr
+from io import StringIO
+
 class HandoffCodeFunctionToolWithType(HandoffFunctionToolWithType):
     def __init__(self, tool_result, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -35,18 +38,28 @@ class HandoffCodeWithType(Handoff):
         Returns:
             Dictionary containing stdout, stderr, and return code
         """
-        try:            
-            namespace = {'TOOL_RESULT': tool_results, 'STDOUT': ''}
-            exec(code, namespace)
+        try:
+            # Create StringIO objects to capture output
+            captured_stdout = StringIO()
+            captured_stderr = StringIO()
+
+            namespace = {'TOOL_RESULT': tool_results}
+            # Redirect stdout and stderr using context managers
+            with redirect_stdout(captured_stdout), redirect_stderr(captured_stderr):
+                exec(code)
+
+            # Retrieve the captured output
+            stdout_output = captured_stdout.getvalue()
+            stderr_output = captured_stderr.getvalue()            
 
             return {
-                'stdout': namespace['STDOUT'],
-                'stderr': '',
+                'stdout': stdout_output,
+                'stderr': stderr_output,
             }
 
         except Exception as e:
             return {
-                'stdout': namespace['STDOUT'],
+                'stdout': stdout_output,
                 'stderr': f'Execution error: {str(e)}',
             }
     @property

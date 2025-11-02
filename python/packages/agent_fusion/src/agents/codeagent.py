@@ -28,6 +28,7 @@ from autogen_core.models import (
 from autogen_agentchat.messages import ModelClientStreamingChunkEvent, ThoughtEvent
 from autogen_core import CancellationToken
 from autogen_core.tools import Workbench, Tool, ToolSchema
+from base.handoff import TypedToolSchema
 from autogen_core.models import CreateResult, ChatCompletionClient, LLMMessage, SystemMessage, UserMessage
 from autogen_core import FunctionCall
 from autogen_core.model_context import ChatCompletionContext, UnboundedChatCompletionContext
@@ -50,7 +51,6 @@ from tools.handoff import HandoffCodeFunctionToolWithType
 event_logger = logging.getLogger(EVENT_LOGGER_NAME)
 logger = logging.getLogger(TRACE_LOGGER_NAME)
 
-HANDOFF_TOKEN = "<|handoff|>"
 
 class CodeAgent(BaseChatQueue, BaseChatAgent):
     def __init__(
@@ -70,7 +70,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         self._system_message = system_message
         if workbench:
             assert isinstance(workbench, list), "workbench must be a list of Workbench"
-        self._workbench = workbench
+        self._workbench :Sequence[Workbench] = workbench
         if not model_context:
             model_context = UnboundedChatCompletionContext([SystemMessage(content=self._system_message, source="system")])
         self._model_context: ChatCompletionContext = model_context
@@ -80,7 +80,8 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         self._is_running = False
         self._cancellation_token: CancellationToken |None = None
         self._reflect_on_tool_use = False
-        self._handoff_tool_name : dict[str,str] | None = None
+        self._handoff_tools : dict[str, list[TypedToolSchema]] | None = None
+
     @property
     def produced_message_types(self) -> Sequence[type[BaseChatMessage]]:
         """Get the types of messages this agent can produce.
@@ -312,9 +313,9 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         #TODO get tools based on context
         tools =await self._get_tools_from_workbench(llm_messages)
 
-        if not self._handoff_tool_name:
-            self._handoff_tool_name = { 
-                tool["name"]: tool["target"] for wb in self._workbench 
+        if not self._handoff_tools:
+            self._handoff_tools = { 
+                tool["name"]: tool for wb in self._workbench 
                 for tool in await wb.list_tools() 
                 if tool.get("type", None) in [ToolType.HANDOFF_TOOL, ToolType.HANDOFF_TOOL_CODE ]  }
 
@@ -389,15 +390,14 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
 
                 for exec_result in exec_results:
                     await self._save_tool_result(exec_result.content)
-
-                handoff_output = self._check_and_handle_handoff(
+                
+                async for handoff_output in self._check_and_handle_handoff(
                     model_result=model_result,
                     executed_calls_and_results=executed_calls_and_results,
                     agent_name=self.name,
-                )
-                if handoff_output:
-                    yield handoff_output
-                    return
+                ):
+                    if handoff_output:
+                        yield handoff_output
                 
             
             llm_messages = await self._get_compatible_context(self._model_client, self._model_context)
@@ -426,6 +426,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
 
         # If we exit the loop without returning, provide final response
         yield self._output_llm_response(model_result, message_id)
+
     async def _save_tool_result(self, tool_result: str) -> None:
         handoff_code_tool : dict[str, HandoffCodeWithType] = [
             tool for wb in self._workbench 
@@ -441,26 +442,27 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                 logging.error(f"Error parsing tool result: {e}")
 
 
-    def _check_and_handle_handoff(
+    async def _check_and_handle_handoff(
         self,
         model_result: CreateResult,
         executed_calls_and_results: List[Tuple[FunctionCall, FunctionExecutionResult]],
         agent_name: str,
-    ) -> Optional[Response]:
+    ) -> AsyncGenerator[Optional[Response], None]:
         """Check for and handle any handoff requests in the model result."""
         if len(self._workbench) == 0 or not isinstance(model_result.content, list):
-            return None
+            yield None
+            return
 
         # Simplified handoff detection - just check if there are any handoff tool calls
-        handoff_reqs = [
-            call for call in model_result.content if (
+        handoff_reqs : list[TypedToolSchema] = [
+            self._handoff_tools[call.name] for call in model_result.content if (
             isinstance(call, FunctionCall) 
-            and call.name in self._handoff_tool_name.keys()
+            and call.name in self._handoff_tools.keys()
             )
         ]
         if len(handoff_reqs) > 0:
             # We have at least one handoff function call
-            selected_handoff = handoff_reqs[0]
+            selected_handoff : TypedToolSchema = handoff_reqs[0]
             
             if len(handoff_reqs) > 1:
                 logger.warning(f"Multiple handoffs detected. Only the first is executed.", stacklevel=2)
@@ -469,9 +471,9 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             selected_handoff_message = "Handoff requested"
             target = "next_agent"
             for exec_call, exec_result in executed_calls_and_results:
-                if exec_call.name == selected_handoff.name:
+                if exec_call.name == selected_handoff['name']:
                     selected_handoff_message = exec_result.content
-                    target = self._handoff_tool_name[exec_call.name]
+                    target = self._handoff_tools[exec_call.name]["target"]
                     break
             
             # Create handoff context
@@ -483,18 +485,26 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                         source=agent_name,
                     )
                 )
+            
+            if selected_handoff['type'] == ToolType.HANDOFF_TOOL_CODE:
+                yield TextMessage(content=selected_handoff_message, source=agent_name)
+                self._model_context.add_message(AssistantMessage(
+                        content=selected_handoff_message,
+                        target=target,  # Default target
+                        source=agent_name,
+                        context=handoff_context,
+                    ))
 
             # Return handoff response
-            return Response(
-                chat_message=HandoffMessage(
+            yield HandoffMessage(
                     content=selected_handoff_message,
                     target=target,  # Default target
                     source=agent_name,
                     context=handoff_context,
-                ),
-            )
+             )
         
-        return None
+        yield None
+
     async def _execute_tool_calls(
         self,
         function_calls: List[FunctionCall],
@@ -597,7 +607,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             )
         else:
             return Response(
-                chat_message=TextMessage(content=model_result.content, source=self.name, full_message_id=message_id)
+                chat_message=TextMessage(content=model_result.content, source=self.name)
             )
 
     async def _call_llm(
@@ -640,15 +650,6 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             return messages
         else:
             return remove_images(messages)
-
-    def _format_single_execution_result(self, code: str, result: dict) -> str:
-        """Format single code execution result"""
-        formatted = f"Code:\n```python\n{code}\n```\n"
-        formatted += f"Output: {result['stdout']}\n"
-        if result['stderr']:
-            formatted += f"Errors: {result['stderr']}\n"
-        formatted += f"Return Code: {result['returncode']}\n"
-        return formatted
 
     async def on_messages(self, messages: Sequence[BaseChatMessage], cancellation_token: CancellationToken) -> Response:
         """Non-streaming message processing"""
