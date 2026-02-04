@@ -51,6 +51,11 @@ class AgentBuilder:
         }
 
         return cls_dict[handoff_type](handoff_type=handoff_type, target=target, message=message)
+
+    def build_model_context(self, model_client: ChatCompletionClient | None = None) -> ChatCompletionContext | None:
+        """Build model context. Can be overridden by subclasses."""
+        return self._context
+
     @asynccontextmanager
     async def build(self, agent_info: AssistantAgentConfig| UserProxyAgentConfig) -> AsyncGenerator[AssistantAgent | UserProxyAgent, None]:
         # Use dynamic class mapping for type-safe agent creation
@@ -87,7 +92,7 @@ class AgentBuilder:
                     name=agent_info.name,
                     workbench=workbench,
                     model_client=model_client,
-                    model_context=self._context,
+                    model_context=self.build_model_context(model_client),
                     system_message=agent_info.prompt(),
                     output_content_type=None,
                     output_content_type_format=None,

@@ -22,6 +22,9 @@ import chainlit as cl
 from autogen_agentchat.messages import BaseAgentEvent, BaseChatMessage, TextMessage, ModelClientStreamingChunkEvent
 from autogen_agentchat.base import TaskResult
 from autogen_agentchat.base import Response
+from agent_memory.context import MemoryContext
+from autogen_core.model_context import ChatCompletionContext
+from autogen_core.models import ChatCompletionClient
 
 # Type aliases following project guidelines
 InputFuncType = Optional[Callable[[str], Awaitable[str]]]
@@ -117,10 +120,12 @@ class UIAgentBuilder(AgentBuilderBase):
     def __init__(self, 
                  data_layer: AgentFusionDataLayer, 
                  input_func: InputFuncType = None, 
-                 model_client_streaming: bool = True):
+                 model_client_streaming: bool = True,
+                 user_id: Optional[int] = None):
         super().__init__(data_layer.db_layer)
-        #self._data_layer = data_layer
+        self._data_layer = data_layer
         self._model_client_streaming = model_client_streaming
+        self.user_id = user_id
     
     def _agent_chat_map(self, agent_type_enum: AgentTypeEnum) -> Type[AgentType]:
         """Override agent chat map for UI-specific typed agents"""
@@ -130,6 +135,11 @@ class UIAgentBuilder(AgentBuilderBase):
             AgentTypeEnum.CODE_AGENT: UIAutoGenAgentChatQueue,
         }[agent_type_enum]
     
+    def build_model_context(self, model_client: ChatCompletionClient | None = None) -> ChatCompletionContext | None:
+        if self._data_layer and self.user_id:
+            return MemoryContext(self._data_layer, user_id=self.user_id, model_client=model_client)
+        return super().build_model_context(model_client)
+
     @asynccontextmanager
     async def build_with_queue(self, agent_info: AgentConfigType):
         """Build an agent and wrap it in UIAutoGenAgentChatQueue"""

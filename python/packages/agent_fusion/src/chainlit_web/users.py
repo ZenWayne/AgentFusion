@@ -216,11 +216,17 @@ class User(UserSessionData, UserSession):
 
     async def component_create(self, component_info: ComponentConfigTypes, data_layer: AgentFusionDataLayer):
         wrap_input = self.input_func()
+        
+        # Get user_id from session
+        user_id = None
+        if context.session and context.session.user and hasattr(context.session.user, 'id'):
+             user_id = context.session.user.id
+
         factory_map = {
             # Single agent modes - wrapped in queue interface
-            AgentType.ASSISTANT_AGENT: UIAgentBuilder(data_layer=data_layer, input_func=wrap_input).build_with_queue,
-            AgentType.USER_PROXY_AGENT: UIAgentBuilder(data_layer=data_layer, input_func=wrap_input).build_with_queue,
-            AgentType.CODE_AGENT: UIAgentBuilder(data_layer=data_layer, input_func=wrap_input).build_with_queue,
+            AgentType.ASSISTANT_AGENT: UIAgentBuilder(data_layer=data_layer, input_func=wrap_input, user_id=user_id).build_with_queue,
+            AgentType.USER_PROXY_AGENT: UIAgentBuilder(data_layer=data_layer, input_func=wrap_input, user_id=user_id).build_with_queue,
+            AgentType.CODE_AGENT: UIAgentBuilder(data_layer=data_layer, input_func=wrap_input, user_id=user_id).build_with_queue,
             # Group chat modes
             GroupChatTypeEnum.SELECTOR_GROUP_CHAT: UIGroupChatBuilder(data_layer=data_layer).build_with_queue,
             GroupChatTypeEnum.ROUND_ROBIN_GROUP_CHAT: UIGroupChatBuilder(data_layer=data_layer).build_with_queue,

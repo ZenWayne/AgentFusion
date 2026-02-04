@@ -14,6 +14,7 @@ from .step_table import StepsTable
 from .thread_table import ThreadTable
 from .user_table import UserTable
 from .user_activity_logs_table import UserActivityLogsTable
+from .memory_table import AgentMemoriesTable
 
 __all__ = [
     # Base classes
@@ -34,5 +35,6 @@ __all__ = [
     "StepsTable",
     "ThreadTable",
     "UserTable",
-    "UserActivityLogsTable"
+    "UserActivityLogsTable",
+    "AgentMemoriesTable"
 ]

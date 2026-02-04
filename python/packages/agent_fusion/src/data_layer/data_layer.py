@@ -36,6 +36,7 @@ from data_layer.models import (
     AgentModel,
     GroupChatModel,
     McpModel,
+    MemoryModel,
     PersistedUser,
     PersistedUserFields,
     AgentFusionUser
@@ -84,6 +85,7 @@ class AgentFusionDataLayer(BaseDataLayer):
         self.step = StepModel(self.db_layer)
         self.thread = ThreadModel(self.db_layer)
         self.mcp = McpModel(self.db_layer)
+        self.memory = MemoryModel(self.db_layer)
 
     async def close(self):
         await self.db_layer.cleanup()

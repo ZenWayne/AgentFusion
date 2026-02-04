@@ -4,6 +4,7 @@
 
 -- Drop existing tables if they exist (for recreation)
 DROP TABLE IF EXISTS feedbacks CASCADE;
+DROP TABLE IF EXISTS agent_memories CASCADE;
 DROP TABLE IF EXISTS elements CASCADE;
 DROP TABLE IF EXISTS steps CASCADE;
 DROP TABLE IF EXISTS threads CASCADE;
@@ -180,6 +181,24 @@ CREATE TABLE steps (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Agent Memories table (for persistent context and storage)
+CREATE TABLE agent_memories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id INTEGER NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
+    agent_id INTEGER REFERENCES agents(id),
+    thread_id UUID REFERENCES threads(id),
+    memory_key VARCHAR(255) NOT NULL, -- The ID used in the placeholder
+    memory_type VARCHAR(50), -- e.g., 'command_output', 'user_preference'
+    summary TEXT, -- Brief description stored in Layer 1
+    content TEXT, -- The detailed content (Layer 2)
+    content_metadata JSONB DEFAULT '{}', -- Extra info
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT TRUE
+);
+CREATE INDEX idx_memories_key ON agent_memories(memory_key);
+CREATE INDEX idx_memories_thread ON agent_memories(thread_id);
+CREATE INDEX idx_memories_user ON agent_memories(user_id);
 
 -- Elements table (for files, images, and other attachments)
 CREATE TABLE elements (

@@ -12,6 +12,7 @@ from .prompt_model import PromptModel
 from .step_model import StepModel, StepInfo
 from .thread_model import ThreadModel, ThreadInfo
 from .user_model import UserModel, UserInfo, PersistedUser, PersistedUserFields, AgentFusionUser
+from .memory_model import MemoryModel, MemoryInfo
 
 # Table classes (SQLAlchemy ORM) - imported from tables package
 from .tables import (
@@ -28,7 +29,8 @@ from .tables import (
     AgentMcpServerTable,
     StepsTable,
     ThreadTable,
-    UserTable
+    UserTable,
+    AgentMemoriesTable
 )
 
 __all__ = [
@@ -57,6 +59,8 @@ __all__ = [
     'PersistedUser',
     'PersistedUserFields',
     'AgentFusionUser',
+    'MemoryModel',
+    'MemoryInfo',
     
     # Table classes (SQLAlchemy ORM)
     'AgentTable',
@@ -70,5 +74,6 @@ __all__ = [
     'AgentMcpServerTable',
     'StepsTable',
     'ThreadTable',
-    'UserTable'
+    'UserTable',
+    'AgentMemoriesTable'
 ]
