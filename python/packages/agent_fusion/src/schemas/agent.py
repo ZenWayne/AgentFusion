@@ -41,6 +41,7 @@ class AssistantAgentConfig(BaseAgentConfig):
     #CR ajust database and agent_model you should use json to store handoff_tools, ajust config.json and the agent_build corespondingly
     handoff_tools: list[HandoffTools] | None = None
     model_client: str
+    memory_model_client: str | None = None
     mcp_tools: list[McpServerParams] | None = None
 
     @model_validator(mode='before')

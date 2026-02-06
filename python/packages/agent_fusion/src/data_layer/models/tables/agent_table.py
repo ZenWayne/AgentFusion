@@ -16,6 +16,7 @@ class AgentTable(BaseComponentTable):
     version = Column(Integer, default=1)
     component_version = Column(Integer, default=1)
     model_client_id = Column(Integer, ForeignKey('model_clients.id'), nullable=True)
+    memory_model_client_id = Column(Integer, ForeignKey('model_clients.id'), nullable=True)
     agent_type = Column(String(50), default='assistant_agent')
     labels = Column(ARRAY(Text), default="[]")
     input_func = Column(String(50), default='input')

@@ -89,17 +89,25 @@ class AgentModel(ComponentModel, AgentBuilder):
     async def to_component_info(self, table_row: AgentTable) -> ComponentInfo:
         """将组件信息转换为ComponentInfo对象"""
         async with await self.db.get_session() as session:
-            # Build query with joins to get model client label
+            # Join model_clients table twice: once for model_client, once for memory_model_client
+            from sqlalchemy.orm import aliased
+            ModelClientAlias = aliased(ModelClientTable)
+            MemoryModelClientAlias = aliased(ModelClientTable)
+
             stmt = select(
-                ModelClientTable.label.label('model_client_label')
+                ModelClientAlias.label.label('model_client_label'),
+                MemoryModelClientAlias.label.label('memory_model_client_label')
             ).select_from(
-                AgentTable.__table__.outerjoin(ModelClientTable.__table__, AgentTable.model_client_id == ModelClientTable.id)
+                AgentTable.__table__
+                .outerjoin(ModelClientAlias.__table__, AgentTable.model_client_id == ModelClientAlias.id)
+                .outerjoin(MemoryModelClientAlias.__table__, AgentTable.memory_model_client_id == MemoryModelClientAlias.id)
             ).where(AgentTable.id == table_row.id)
             
             result = await session.execute(stmt)
             row = result.first()
             
             model_client_label = row[0] if row else None
+            memory_model_client_label = row[1] if row else None
             
             # Get current prompt content from PromptModel
             current_prompt = await self.prompt_model.get_current_prompt_content(ComponentType.AGENT, table_row.name)
@@ -177,6 +185,7 @@ class AgentModel(ComponentModel, AgentBuilder):
                 return AssistantAgentConfig(
                     type=agent_type,
                     model_client=model_client_label or "default",
+                    memory_model_client=memory_model_client_label,
                     prompt=lambda content=current_prompt: content or "",
                     mcp_tools=mcp_tools,
                     handoff_tools=handoff_tools_objects,

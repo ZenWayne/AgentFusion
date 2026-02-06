@@ -25,6 +25,7 @@ from autogen_agentchat.base import Response
 from agent_memory.context import MemoryContext
 from autogen_core.model_context import ChatCompletionContext
 from autogen_core.models import ChatCompletionClient
+from autogen_ext.models.openai import OpenAIChatCompletionClient
 
 # Type aliases following project guidelines
 InputFuncType = Optional[Callable[[str], Awaitable[str]]]
@@ -135,7 +136,7 @@ class UIAgentBuilder(AgentBuilderBase):
             AgentTypeEnum.CODE_AGENT: UIAutoGenAgentChatQueue,
         }[agent_type_enum]
     
-    def build_model_context(self, model_client: ChatCompletionClient | None = None) -> ChatCompletionContext | None:
+    def build_model_context(self, model_client: ChatCompletionClient | None = None, memory_model_client: ChatCompletionClient | None = None) -> ChatCompletionContext | None:
         if self._data_layer and self.user_id:
             return MemoryContext(self._data_layer, user_id=self.user_id, model_client=model_client)
         return super().build_model_context(model_client)

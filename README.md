@@ -9,6 +9,7 @@ A comprehensive AI agent management platform that provides multi-agent orchestra
 - **User Authentication**: Complete user management with bcrypt password hashing and activity logging
 - **Web Interface**: Chainlit-powered real-time chat interface with WebSocket support
 - **MCP Integration**: Model Context Protocol support for external tool integration
+- **Advanced Memory System**: Configurable memory models and intelligent context initialization
 - **Prompt Management**: Version-controlled prompt system with built-in optimization agents
 - **Activity Logging**: Comprehensive audit trail for all user actions and system events
 - **Flexible Configuration**: JSON-based configuration system for agents, workflows, and integrations
@@ -142,6 +143,7 @@ Agents are defined in `config.json` under the `agents` section:
       "type": "assistant_agent",
       "prompt_path": "agent/your_prompt.md",
       "model_client": "deepseek-chat_DeepSeek",
+      "memory_model_client": "gemini-2.5-flash-preview-04-17_Google",
       "mcp_tools": ["file_system"]
     }
   }

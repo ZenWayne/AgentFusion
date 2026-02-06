@@ -4,7 +4,7 @@ import re
 import json
 from typing import List, Optional, Union, Dict, Any
 from autogen_core.model_context import ChatCompletionContext
-from autogen_core.models import ChatMessage, SystemMessage, UserMessage, AssistantMessage, FunctionExecutionResult, ChatCompletionClient
+from autogen_core.models import LLMMessage, SystemMessage, UserMessage, AssistantMessage, FunctionExecutionResult, ChatCompletionClient
 from data_layer.data_layer import AgentFusionDataLayer
 
 logger = logging.getLogger(__name__)
@@ -27,9 +27,9 @@ class MemoryContext(ChatCompletionContext):
         self.user_id = user_id
         self.threshold = threshold
         self.model_client = model_client
-        self._messages: List[ChatMessage] = []
+        self._messages: List[LLMMessage] = []
     
-    async def _summarize(self, message: ChatMessage) -> str:
+    async def _summarize(self, message: LLMMessage) -> str:
         """Generate a concise summary of the content using LLM if available."""
         source = getattr(message, 'source', 'unknown')
         if not self.model_client:
@@ -53,7 +53,7 @@ class MemoryContext(ChatCompletionContext):
             logger.error(f"Error summarizing content: {e}")
             return f"Large content from {source}"
 
-    async def add_message(self, message: ChatMessage):
+    async def add_message(self, message: LLMMessage):
         """
         Adds a message to the context, potentially moving large content to memory.
         """
@@ -97,7 +97,77 @@ class MemoryContext(ChatCompletionContext):
 
         self._messages.append(message)
 
-    async def get_messages(self) -> List[ChatMessage]:
+    async def init_memory(self, message: LLMMessage) -> List[LLMMessage]:
+        """
+        Analyzes the first message to retrieve relevant historical memories.
+        Returns a list of messages including the original message and potentially a SystemMessage 
+        containing relevant memory references (Layer 1).
+        """
+        # Default return: just the original message
+        if not self.model_client or not self.data_layer.memory or not isinstance(message, UserMessage):
+            return [message]
+
+        try:
+            # 1. Ask LLM for search queries
+            prompt = f"""
+            Analyze the following user request and generate 1-3 keyword search queries to find relevant past memories (e.g., user preferences, previous command outputs, specific details) that would help address it.
+            
+            User Request: "{message.content}"
+            
+            Return ONLY a JSON object with a key "queries" containing the list of strings.
+            Example: {{"queries": ["project configuration", "database credentials"]}}
+            If no external memory is needed, return {{"queries": []}}.
+            """
+            
+            # Use a separate context for this decision to avoid polluting the main context
+            messages_for_llm = [UserMessage(content=prompt, source="system")]
+            response = await self.model_client.create(messages_for_llm)
+            
+            # Parse JSON
+            content = response.content
+            json_str = content
+            if "```json" in content:
+                json_str = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                json_str = content.split("```")[1].split("```")[0]
+            
+            try:
+                queries = json.loads(json_str.strip()).get("queries", [])
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse JSON from init_memory: {content}")
+                return [message]
+            
+            if not queries:
+                return [message]
+
+            # 2. Search memories
+            found_memories = {}
+            for query in queries:
+                results = await self.data_layer.memory.search_memories(query, user_id=self.user_id, limit=3)
+                for mem in results:
+                    found_memories[mem.memory_key] = mem
+
+            if not found_memories:
+                return [message]
+
+            # 3. Format results as Layer 1 Placeholders
+            memory_context_str = "Relevant Past Memories:\n"
+            for mem in found_memories.values():
+                # Estimate token count (char / 4)
+                token_count = len(mem.content) // 4 if mem.content else 0
+                memory_context_str += f"[MemoryRef: {mem.memory_key} - {mem.summary} - {token_count} tokens]\n"
+
+            # 4. Construct SystemMessage
+            system_msg = SystemMessage(content=memory_context_str)
+            
+            # Return [SystemMessage, OriginalMessage]
+            return [system_msg, message]
+
+        except Exception as e:
+            logger.error(f"Error in init_memory: {e}")
+            return [message]
+
+    async def get_messages(self) -> List[LLMMessage]:
         """
         Retrieve messages, intelligently expanding memories if relevant to the latest user request.
         """

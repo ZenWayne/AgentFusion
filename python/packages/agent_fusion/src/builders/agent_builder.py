@@ -15,6 +15,7 @@ from autogen_core.memory import ListMemory
 from autogen_agentchat.base import Handoff
 from autogen_ext.tools.mcp import McpWorkbench
 from autogen_core.model_context import ChatCompletionContext
+from autogen_core.models import ChatCompletionClient
 from contextlib import AsyncExitStack
 from tools.handoff import HandoffWithTypeRaw, HandoffCodeWithType, HandoffType
 from tools.workbench import VectorStreamWorkbench
@@ -52,7 +53,7 @@ class AgentBuilder:
 
         return cls_dict[handoff_type](handoff_type=handoff_type, target=target, message=message)
 
-    def build_model_context(self, model_client: ChatCompletionClient | None = None) -> ChatCompletionContext | None:
+    def build_model_context(self, model_client: ChatCompletionClient | None = None, memory_model_client: ChatCompletionClient | None = None) -> ChatCompletionContext | None:
         """Build model context. Can be overridden by subclasses."""
         return self._context
 
@@ -86,13 +87,26 @@ class AgentBuilder:
                 ])
             #tools.append(retrieve_filesystem_tool())
             model_client_config = await model_client_builder.get_component_by_name(agent_info.model_client)
+            
+            # Handle memory model client if specified
+            memory_model_client = None
+            memory_model_client_context_manager = AsyncExitStack()
+            if agent_info.memory_model_client:
+                memory_model_config = await model_client_builder.get_component_by_name(agent_info.memory_model_client)
+                memory_model_client = await memory_model_client_context_manager.enter_async_context(
+                    model_client_builder.build(memory_model_config)
+                )
+
             async with model_client_builder.build(model_client_config) as model_client:
+                # If no specific memory model is provided, use the main model client
+                effective_memory_model = memory_model_client if memory_model_client else model_client
+                
                 workbench = [VectorStreamWorkbench(tools=tools)] if tools else None
                 agent = agent_class(
                     name=agent_info.name,
                     workbench=workbench,
                     model_client=model_client,
-                    model_context=self.build_model_context(model_client),
+                    model_context=self.build_model_context(model_client, effective_memory_model),
                     system_message=agent_info.prompt(),
                     output_content_type=None,
                     output_content_type_format=None,
@@ -100,6 +114,10 @@ class AgentBuilder:
                 )
                 agent.component_label = agent_info.name
                 yield agent
+                
+            # Cleanup memory model client if it was created
+            await memory_model_client_context_manager.aclose()
+            
         elif agent_info.type == AgentTypeEnum.ASSISTANT_AGENT:
             model_client_config = await model_client_builder.get_component_by_name(agent_info.model_client)
             async with model_client_builder.build(model_client_config) as model_client:
@@ -121,10 +139,15 @@ class AgentBuilder:
                 handoffs = []
                 if agent_info.handoff_tools:
                     for handoff_tool in agent_info.handoff_tools:
-                        handoffs.append(HandoffWithType(target=handoff_tool.target, message=handoff_tool.message))
+                        handoff_tool_cls = {
+                            ToolType.HANDOFF_TOOL: HandoffWithTypeRaw,
+                            ToolType.HANDOFF_TOOL_CODE: HandoffCodeWithType,
+                        }.get(handoff_tool.handoff_type, None)
+                        if handoff_tool_cls :
+                            handoffs.append(handoff_tool_cls(target=handoff_tool.target, message=handoff_tool.message))
                 else:
                     # Default handoff to user if none specified
-                    handoffs = [HandoffWithType(target="user", message="Transfer to user.")]
+                    handoffs = [HandoffType(target="user", message="Transfer to user.")]
                 
                 agent = agent_class(
                     name=agent_info.name,
@@ -149,22 +172,3 @@ class AgentBuilder:
             yield agent
         else:
             raise ValueError(f"Invalid agent type: {agent_info.type}")
-
-async def test():
-    from autogen_agentchat.ui import Console
-    from autogen_agentchat.messages import TextMessage
-    from autogen_core import CancellationToken
-
-    agent = await AgentBuilder("file_system")
-    await Console(
-            agent.on_messages_stream(
-                [TextMessage(content=f"列出当前文件夹下所有文件和文件夹", source="user")], CancellationToken()
-            )
-    )
-
-if __name__ == "__main__":
-    import asyncio
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(test())
-    #python -m agent.agent_builder
