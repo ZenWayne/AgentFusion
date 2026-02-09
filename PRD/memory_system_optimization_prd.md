@@ -370,15 +370,63 @@ class MemoryContext(ChatCompletionContext):
 
     async def _handle_tool_calls(
         self,
-        tool_calls: List[ToolCall]
+        tool_calls: List[ToolCall],
+        stream: asyncio.Queue[BaseAgentEvent | BaseChatMessage | None]
     ) -> List[ToolResult]:
-        """处理记忆相关工具调用"""
+        """处理记忆相关工具调用
+
+        参考CodeAgent实现，使用asyncio.Queue支持流式输出，
+        通过create_task异步执行工具调用。
+        """
         results = []
         for call in tool_calls:
             if call.name == "search_memories":
+                # 发送工具执行事件到流
+                await stream.put(ToolCallExecutionEvent(
+                    content=f"正在搜索记忆: {call.arguments.get('keywords', [])}",
+                    source=self.name
+                ))
                 result = await self._execute_memory_search(call.arguments)
                 results.append(ToolResult(call_id=call.id, result=result))
+                # 发送执行完成事件
+                await stream.put(ToolCallResultEvent(
+                    content=f"找到 {len(result)} 条相关记忆",
+                    source=self.name
+                ))
         return results
+
+    async def execute_memory_tools_with_stream(
+        self,
+        tool_calls: List[ToolCall]
+    ) -> AsyncGenerator[BaseAgentEvent | BaseChatMessage, None]:
+        """流式执行记忆工具调用
+
+        使用方式（参考CodeAgent._run_step_impl）:
+        ```python
+        stream = asyncio.Queue[BaseAgentEvent | BaseChatMessage | None]()
+        task = asyncio.create_task(self._handle_tool_calls(tool_calls, stream))
+
+        while True:
+            event = await stream.get()
+            if event is None:
+                break
+            yield event
+
+        results = await task
+        ```
+        """
+        stream: asyncio.Queue[BaseAgentEvent | BaseChatMessage | None] = asyncio.Queue()
+
+        task = asyncio.create_task(self._handle_tool_calls(tool_calls, stream))
+
+        while True:
+            event = await stream.get()
+            if event is None:
+                break
+            yield event
+
+        results = await task
+        yield results
 ```
 
 #### 3.4.2 主动记忆提示
@@ -423,11 +471,789 @@ MEMORY_TOOLS_SYSTEM_PROMPT = """你是一个智能助手，拥有访问用户历
 """
 ```
 
+### 3.4.3 记忆召回完整流程图
+
+#### 流程概述
+
+```mermaid
+flowchart TB
+    subgraph INIT["🚀 初始化阶段"]
+        A[用户开始新对话] --> B{检查是否有<br/>active_thread}
+        B -->|否| C[创建新对话线程]
+        B -->|是| D[加载已有对话线程]
+        C --> E[初始化MemoryContext]
+        D --> E
+        E --> F[调用RecallAgent<br/>执行第一轮召回]
+    end
+
+    subgraph RECALL1["🔄 第一轮召回 - 对话初始化"]
+        F --> F1[RecallAgent分析<br/>用户初始消息]
+        F1 --> F2{是否需要<br/>历史记忆?}
+        F2 -->|是| F3[生成搜索查询<br/>keywords + semantic]
+        F2 -->|否| F4[返回空结果]
+        F3 --> F3A{查询是否复杂?<br/>需要提取关键词}
+        F3A -->|是| F3B["调用extract_search_keywords_tool<br/>提取结构化关键词"]
+        F3A -->|否| F5[搜索记忆数据库]
+        F3B --> F5
+        F5 --> F6[按相关性排序<br/>取TOP-N]
+        F6 --> F7["生成记忆槽占位符<br/>记忆槽格式: memory:key:summary"]
+        F4 --> G[注入系统提示]
+        F7 --> G
+    end
+
+    subgraph MSGLOOP["💬 消息处理循环"]
+        G --> H[等待用户输入]
+        H --> I[接收用户消息]
+        I --> J{消息类型判断}
+
+        J -->|普通对话| K[调用RecallAgent<br/>判断是否需要记忆]
+        J -->|执行命令| L[进入命令处理流程]
+
+        K --> K1{RecallAgent分析}
+        K1 -->|需要记忆| K2[生成搜索参数]
+        K1 -->|不需要| K3[继续对话]
+        K2 --> K4[执行记忆搜索<br/>第N轮召回]
+        K4 --> K5[返回记忆结果]
+        K5 --> K6[动态注入上下文<br/>或生成占位符]
+        K6 --> M[Agent生成回复]
+        K3 --> M
+
+        L --> L1[解析命令参数]
+        L1 --> L2{命令是否需要<br/>历史数据?}
+        L2 -->|是| L3["使用记忆槽占位符<br/>格式: memory:key"]
+        L2 -->|否| L4[直接执行命令]
+        L3 --> L5[执行前替换占位符<br/>为实际内容]
+        L5 --> L6[执行命令]
+        L4 --> L6
+        L6 --> L7[返回命令结果]
+        L7 --> M
+
+        M --> N{对话是否结束?}
+        N -->|否| H
+        N -->|是| O[保存对话记忆]
+    end
+
+    subgraph RECALLN["🔄 第N轮召回 - 动态召回"]
+        K4 --> K4A[分析当前对话上下文]
+        K4A --> K4B{上下文是否<br/>引用历史?}
+        K4B -->|是| K4C["提取引用关键词<br/>之前说过的/上次配置"]
+        K4B -->|否| K4D[分析用户意图]
+        K4C --> K4E[扩展同义词搜索]
+        K4D --> K4D1["可选: 调用extract_search_keywords_tool<br/>从用户消息提取关键词"]
+        K4D1 --> K4F{意图是否需要<br/>历史信息?}
+        K4F -->|是| K4G[生成语义查询]
+        K4F -->|否| K4H[跳过召回]
+        K4E --> K4I[混合搜索<br/>keyword + semantic]
+        K4G --> K4I
+        K4I --> K4J["过滤低相关性结果<br/>score 小于 0.6"]
+        K4J --> K4K[返回结构化记忆]
+    end
+
+    subgraph PLACEHOLDER["🎫 记忆槽占位符系统"]
+        L3 --> P1[定义占位符格式]
+        P1 --> P2["格式: memory:key 或<br/>memory:key:summary"]
+        P2 --> P3[命令解析时识别占位符]
+        P3 --> P4{占位符类型?}
+        P4 -->|完整内容| P5[替换为memory.content]
+        P4 -->|摘要引用| P6[替换为memory.summary]
+        P4 -->|元数据引用| P7[替换为memory.metadata]
+        P5 --> P8[验证替换结果]
+        P6 --> P8
+        P7 --> P8
+        P8 --> P9{替换是否成功?}
+        P9 -->|是| P10[继续执行命令]
+        P9 -->|否| P11[报错:记忆未找到]
+    end
+
+    style INIT fill:#e1f5ff
+    style RECALL1 fill:#e8f5e9
+    style MSGLOOP fill:#fff3e0
+    style RECALLN fill:#f3e5f5
+    style PLACEHOLDER fill:#fce4ec
+```
+
+#### 详细步骤说明
+
+##### 记忆注入方式判断逻辑
+
+流程图中 **K5 → K6[动态注入上下文 或 生成占位符]** 的判断依据如下：
+
+| 场景 | 处理方式 | 说明 |
+|------|---------|------|
+| **用户普通消息** | **动态注入上下文** | 将记忆的完整内容或摘要直接展开，注入到当前对话上下文中，Agent 可立即参考 |
+| **用户执行命令** | **生成占位符** | 生成 `[memory:key]` 占位符，命令执行前再替换为实际内容 |
+
+**判断代码示例**：
+
+```python
+class MemoryContext:
+    async def inject_memory_results(
+        self,
+        search_results: List[Memory],
+        message_type: str,  # "user_chat" | "command"
+    ) -> Union[str, List[MemoryPlaceholder]]:
+        """
+        根据消息类型决定记忆注入方式
+
+        - 用户消息: 直接展开记忆内容，注入上下文
+        - 命令: 生成占位符，延迟到执行时替换
+        """
+        if message_type == "command":
+            # 命令场景：生成占位符
+            # 例如: [memory:db-config-123] 替换为实际的数据库配置
+            placeholders = [
+                MemoryPlaceholder(
+                    key=mem.key,
+                    display_format=f"[memory:{mem.key}]"
+                )
+                for mem in search_results
+            ]
+            return placeholders
+
+        else:  # user_chat
+            # 普通对话：直接展开记忆内容
+            # 将记忆内容格式化为文本，加入系统提示或用户上下文
+            memory_texts = []
+            for mem in search_results:
+                memory_texts.append(
+                    f"相关历史记忆 [{mem.key}]:\n"
+                    f"摘要: {mem.summary}\n"
+                    f"内容: {mem.content[:500]}..."
+                )
+            return "\n\n".join(memory_texts)
+```
+
+**使用示例**：
+
+```
+场景1 - 用户普通消息（直接展开）:
+  用户: "按照我之前的数据库配置"
+  处理: 搜索记忆后，将数据库配置的完整内容注入上下文
+  Agent看到的: "相关历史记忆 [db-config-001]: 摘要: MySQL主从配置 内容: server-id=1..."
+
+场景2 - 跨会话命令引用（占位符展开）:
+  时间线:
+    上周: 用户执行了 "python train.py --epochs 100"（被记录为记忆 cmd-001）
+    今天: 用户开启新对话，说 "重新执行上次的训练命令"
+
+  处理流程:
+    1. 初始化时通过 RecallAgent 搜索记忆
+    2. 找到记忆 cmd-001: "python train.py --epochs 100"
+    3. 因为是用户消息（非直接命令），将记忆内容展开注入上下文
+       Agent 看到的上下文:
+       "用户消息: 重新执行上次的训练命令
+        相关历史记忆 [cmd-001]: 训练命令
+        内容: python train.py --epochs 100"
+    4. Agent 理解后决定执行该命令
+    5. 命令执行阶段使用占位符:
+       - 内部命令表示: "执行 [memory:cmd-001]"
+       - 执行前展开为: "python train.py --epochs 100"
+```
+
+---
+
+##### 阶段一: 初始化与第一轮召回
+
+```python
+class MemoryContext:
+    async def init_memory(self, user_message: str) -> List[LLMMessage]:
+        """
+        对话初始化时的记忆召回流程
+
+        步骤:
+        1. 检查是否是新对话（无历史消息）
+        2. 调用RecallAgent分析用户初始意图
+        3. 如果需要历史记忆，执行第一轮召回
+        4. 将召回的记忆以占位符形式注入系统提示
+
+        Returns:
+            包含记忆占位符的系统消息列表
+        """
+        messages = []
+
+        # Step 1: 判断是否需要召回
+        recall_decision = await self.recall_agent.should_recall(
+            message=user_message,
+            context_type="initialization"
+        )
+
+        if recall_decision.needs_recall:
+            # Step 2: 可选 - 使用 extract_search_keywords_tool 提取结构化关键词
+            # 当用户查询较复杂时，先提取关键词提高搜索精度
+            if recall_decision.is_complex_query:
+                keyword_result = await extract_search_keywords_tool(
+                    model_client=self.memory_model_client,
+                    input_data=ExtractKeywordsInput(
+                        query=user_message,
+                        context="对话初始化",
+                        max_keywords=5
+                    )
+                )
+                recall_decision.keywords = [kw.keyword for kw in keyword_result.keywords]
+
+            # Step 3: 执行第一轮召回（最多3轮尝试）
+            memories = await self._execute_recall_with_retry(
+                queries=recall_decision.search_queries,
+                max_rounds=3,
+                min_results=2
+            )
+
+            # Step 3: 生成记忆槽占位符
+            memory_placeholders = self._generate_placeholders(memories)
+
+            # Step 4: 构建系统提示
+            system_prompt = self._build_system_prompt(memory_placeholders)
+            messages.append(SystemMessage(content=system_prompt))
+
+        return messages
+
+    async def _execute_recall_with_retry(
+        self,
+        queries: List[SearchQuery],
+        max_rounds: int = 3,
+        min_results: int = 2
+    ) -> List[Memory]:
+        """
+        多轮召回执行，直到获取足够记忆或达到最大轮数
+
+        Round 1: 使用原始查询精确搜索
+        Round 2: 扩展同义词，放宽匹配条件
+        Round 3: 纯语义搜索，扩大搜索范围
+        """
+        all_memories = []
+
+        for round_num in range(1, max_rounds + 1):
+            # 每轮调整搜索策略
+            search_params = self._adjust_search_params(queries, round_num)
+
+            results = await self.search_memories(**search_params)
+            all_memories.extend(results)
+
+            # 去重
+            all_memories = self._deduplicate_memories(all_memories)
+
+            # 检查是否满足最小结果数
+            if len(all_memories) >= min_results:
+                break
+
+        return all_memories[:10]  # 最多返回10条
+
+    def _generate_placeholders(self, memories: List[Memory]) -> List[MemoryPlaceholder]:
+        """
+        生成记忆槽占位符
+
+        格式:
+        - [memory:{key}:summary] - 摘要引用
+        - [memory:{key}:full] - 完整内容（用于重要记忆）
+        - [memory:{key}:meta:{field}] - 元数据字段
+        """
+        placeholders = []
+        for mem in memories:
+            placeholder = MemoryPlaceholder(
+                key=mem.key,
+                display_format=f"[memory:{mem.key}:{mem.summary[:50]}...]",
+                full_content=mem.content,
+                relevance_score=mem.relevance_score
+            )
+            placeholders.append(placeholder)
+        return placeholders
+```
+
+##### 阶段二: 消息级别的记忆判断
+
+```python
+class RecallAgent:
+    async def should_recall(
+        self,
+        message: str,
+        context_type: str,  # "initialization" | "mid_conversation" | "command"
+        conversation_history: List[LLMMessage] = None
+    ) -> RecallDecision:
+        """
+        判断是否需要召回记忆
+
+        判断维度:
+        1. 关键词触发: "之前"、"上次"、"说过"、"配置过"
+        2. 指代消解: "那个方案"、"之前的设置"
+        3. 任务延续: 多轮任务中的上下文缺失
+        4. 用户偏好: 涉及个人习惯的请求
+
+        Returns:
+            RecallDecision: 包含是否需要召回、搜索查询列表、紧急程度
+        """
+        # 使用轻量级模型进行快速判断
+        prompt = self._build_recall_decision_prompt(
+            message=message,
+            context_type=context_type,
+            history=conversation_history
+        )
+
+        response = await self.model_client.complete(prompt)
+
+        # 解析判断结果
+        decision = self._parse_recall_decision(response.content)
+
+        return decision
+
+    async def analyze_message_intent(
+        self,
+        message: str
+    ) -> IntentAnalysis:
+        """
+        分析用户消息意图，判断记忆需求
+
+        意图类型:
+        - INFORMATION_SEEKING: 查询历史信息
+        - TASK_CONTINUATION: 继续之前任务
+        - PREFERENCE_BASED: 基于偏好的请求
+        - COMMAND_EXECUTION: 执行命令（可能引用历史）
+        - GENERAL_CHAT: 普通对话
+        """
+        prompt = f"""
+        分析以下用户消息的意图，判断是否需要历史记忆：
+
+        用户消息: {message}
+
+        请输出JSON格式:
+        {{
+            "intent_type": "INFORMATION_SEEKING|TASK_CONTINUATION|PREFERENCE_BASED|COMMAND_EXECUTION|GENERAL_CHAT",
+            "needs_memory": true/false,
+            "confidence": 0.0-1.0,
+            "reasoning": "判断理由",
+            "suggested_queries": ["搜索查询1", "搜索查询2"]
+        }}
+        """
+
+        response = await self.model_client.complete(prompt)
+        return IntentAnalysis.parse_raw(response.content)
+
+    async def extract_keywords_for_search(
+        self,
+        message: str,
+        context: str = None
+    ) -> List[str]:
+        """
+        使用 extract_search_keywords_tool 从消息中提取搜索关键词
+
+        调用时机:
+        1. 用户消息较长较复杂，需要结构化关键词
+        2. 模糊查询需要提取实体、动作、时间等维度
+        3. 第一轮召回后的第N轮动态召回
+
+        Returns:
+            提取的关键词列表
+        """
+        from memrecall_agent_tools import extract_search_keywords_tool
+
+        result = await extract_search_keywords_tool(
+            model_client=self.model_client,
+            input_data=ExtractKeywordsInput(
+                query=message,
+                context=context,
+                max_keywords=5
+            )
+        )
+
+        if result.success:
+            return [kw.keyword for kw in result.keywords]
+        return []
+```
+
+##### 阶段三: 命令执行时的记忆槽占位符
+
+```python
+class CommandExecutor:
+    """
+    支持记忆槽占位符的命令执行器
+
+    记忆使用方式:
+    1. 找到命令记忆后，在消息槽之前以 system 角色插入记忆摘要 [memory:key:summary]
+    2. 执行时通过 Python 环境传入记忆内容，使用 exec_locals 变量映射
+    """
+
+    # 占位符正则表达式
+    MEMORY_PLACEHOLDER_PATTERN = re.compile(
+        r'\[memory:(?P<key>[\w-]+)(?::(?P<format>full|summary|meta:(?P<metafield>\w+)))?\]'
+    )
+
+    async def prepare_memory_context(
+        self,
+        messages: List[LLMMessage],
+        memory_slots: List[MemorySlot],
+        memory_context: MemoryContext
+    ) -> List[LLMMessage]:
+        """
+        在消息列表前插入记忆摘要（system角色）
+
+        流程:
+        1. 获取记忆槽中的记忆
+        2. 在消息列表最前面插入 system 消息，包含记忆摘要
+        3. 返回新的消息列表
+
+        示例:
+            原始消息: [UserMessage("执行上次的命令")]
+            记忆槽: [MemorySlot(key="cmd-001", summary="训练命令", content="python train.py")]
+
+            返回:
+            [
+                SystemMessage("可用记忆槽:\n- [memory:cmd-001] 训练命令"),
+                UserMessage("执行上次的命令")
+            ]
+        """
+        if not memory_slots:
+            return messages
+
+        # 构建记忆槽摘要
+        slot_summaries = []
+        for slot in memory_slots:
+            slot_summaries.append(f"- [{slot.placeholder}] {slot.summary}")
+
+        # 在消息列表前插入 system 消息
+        memory_system_msg = SystemMessage(
+            content=f"可用记忆槽:\n{chr(10).join(slot_summaries)}\n\n"
+                    f"你可以通过 [memory:key] 引用这些记忆，"
+                    f"执行时会将记忆内容作为变量传入 Python 环境。"
+        )
+
+        return [memory_system_msg] + messages
+
+    async def execute_with_memory_env(
+        self,
+        code: str,
+        memory_slots: List[MemorySlot],
+        recent_messages: List[LLMMessage],
+        memory_context: MemoryContext
+    ) -> CommandResult:
+        """
+        在 Python 环境中执行代码，通过 exec_locals 传入记忆槽变量
+
+        流程:
+        1. 构建 exec_locals，包含最新消息和记忆槽 kv-map
+        2. 解析代码中的占位符
+        3. 在 exec_locals 中创建 memory 字典，key 为记忆标识，value 为记忆内容
+        4. 使用 exec() 执行代码
+        5. 返回执行结果
+
+        示例:
+            code: """
+            # 引用之前的配置
+            config = memory["db-config-001"]
+            # 使用配置连接数据库
+            conn = connect(host=config["host"], port=config["port"])
+            """
+
+            memory_slots: [
+                MemorySlot(key="db-config-001", content={"host": "localhost", "port": 3306})
+            ]
+
+            exec_locals 构建:
+            {
+                "memory": {
+                    "db-config-001": {"host": "localhost", "port": 3306}
+                },
+                "messages": ["执行上次的配置", ...],
+                "ctx": <MemoryContext对象>
+            }
+
+            执行:
+            exec_locals = {"memory": {...}, "messages": [...], "ctx": ...}
+            exec(compile(code, "<string>", "exec"), globals(), exec_locals)
+            result = exec_locals.get("_result")
+        """
+        # Step 1: 构建 exec_locals
+        exec_locals = await self._build_exec_locals(
+            memory_slots=memory_slots,
+            recent_messages=recent_messages,
+            memory_context=memory_context
+        )
+
+        # Step 2: 解析代码中的占位符（用于调试和日志）
+        placeholders = self._extract_placeholders(code)
+        logger.debug(f"代码中的占位符: {[p.key for p in placeholders]}")
+
+        # Step 3: 验证所有引用的记忆都存在
+        missing_keys = [
+            p.key for p in placeholders
+            if p.key not in exec_locals["memory"]
+        ]
+        if missing_keys:
+            return CommandResult(
+                success=False,
+                error=f"未找到记忆: {missing_keys}"
+            )
+
+        try:
+            # Step 4: 执行代码
+            # 使用 exec() 在隔离的 locals 环境中执行
+            exec_globals = {
+                "__builtins__": __builtins__,
+                # 可以注入安全的内置函数
+                "print": print,
+                "len": len,
+                "range": range,
+            }
+
+            compiled_code = compile(code, "<memory_exec>", "exec")
+            exec(compiled_code, exec_globals, exec_locals)
+
+            # Step 5: 获取执行结果
+            result = exec_locals.get("_result", exec_locals.get("result", None))
+
+            # Step 6: 记录执行结果到记忆
+            await self._save_execution_result(
+                code=code,
+                exec_locals=exec_locals,
+                result=result,
+                memory_context=memory_context
+            )
+
+            return CommandResult(
+                success=True,
+                result=result,
+                output=exec_locals.get("_output", ""),
+                memory_refs=[p.key for p in placeholders]
+            )
+
+        except Exception as e:
+            return CommandResult(
+                success=False,
+                error=f"执行失败: {str(e)}\n{traceback.format_exc()}"
+            )
+
+    async def _build_exec_locals(
+        self,
+        memory_slots: List[MemorySlot],
+        recent_messages: List[LLMMessage],
+        memory_context: MemoryContext
+    ) -> Dict[str, Any]:
+        """
+        构建执行环境的 locals 字典
+
+        包含:
+        - memory: 记忆槽字典，{key: content}
+        - messages: 最近的消息列表（字符串形式）
+        - ctx: MemoryContext 对象（可选）
+        - tools: 可用的工具函数
+        """
+        # 构建 memory 字典
+        memory_dict = {}
+        for slot in memory_slots:
+            memory_dict[slot.key] = slot.content
+
+        # 消息列表转换为字符串
+        message_history = []
+        for msg in recent_messages[-10:]:  # 最近10条
+            if isinstance(msg, UserMessage):
+                message_history.append(f"User: {msg.content}")
+            elif isinstance(msg, AssistantMessage):
+                message_history.append(f"Assistant: {msg.content}")
+            elif isinstance(msg, SystemMessage):
+                message_history.append(f"System: {msg.content}")
+
+        return {
+            "memory": memory_dict,  # 记忆槽变量，代码中通过 memory["key"] 访问
+            "messages": message_history,  # 最近消息
+            "ctx": memory_context,  # 上下文对象
+            "_output": "",  # 用于捕获输出
+            "_result": None,  # 用于存储结果
+        }
+
+    async def execute_command_references(
+        self,
+        user_request: str,
+        referenced_memories: List[str],  # 引用的记忆key列表
+        memory_context: MemoryContext
+    ) -> CommandResult:
+        """
+        完整流程：用户引用历史命令的执行
+
+        场景:
+            用户说: "重新执行 [memory:cmd-001]"
+            Agent找到记忆，决定执行
+
+        流程:
+            1. 获取引用的记忆内容
+            2. 准备消息上下文（插入system消息）
+            3. 构建执行环境（包含记忆槽变量）
+            4. 执行代码
+        """
+        # 获取记忆槽
+        memory_slots = await memory_context.get_memory_slots(quoted_memories)
+
+        # 准备消息上下文
+        recent_messages = [UserMessage(content=user_request, source="user")]
+        prepared_messages = await self.prepare_memory_context(
+            messages=recent_messages,
+            memory_slots=memory_slots,
+            memory_context=memory_context
+        )
+
+        # 获取要执行的代码（从记忆中提取）
+        code_to_execute = self._extract_code_from_memories(memory_slots)
+
+        # 执行
+        return await self.execute_with_memory_env(
+            code=code_to_execute,
+            memory_slots=memory_slots,
+            recent_messages=prepared_messages,
+            memory_context=memory_context
+        )
+
+    def _extract_placeholders(self, command: str) -> List[MemoryPlaceholder]:
+        """从命令中提取所有记忆占位符"""
+        placeholders = []
+        for match in self.MEMORY_PLACEHOLDER_PATTERN.finditer(command):
+            placeholders.append(MemoryPlaceholder(
+                key=match.group('key'),
+                format_type=match.group('format') or 'summary',
+                metafield=match.group('metafield'),
+                raw_match=match.group(0),
+                position=match.span()
+            ))
+        return placeholders
+
+    def _resolve_placeholders(
+        self,
+        command: str,
+        placeholders: List[MemoryPlaceholder],
+        memory_map: Dict[str, Memory]
+    ) -> str:
+        """替换命令中的占位符为实际内容"""
+        resolved = command
+
+        # 按位置倒序替换，避免位置偏移
+        for placeholder in sorted(placeholders, key=lambda p: p.position[0], reverse=True):
+            memory = memory_map.get(placeholder.key)
+
+            if not memory:
+                replacement = f"[ERROR: Memory {placeholder.key} not found]"
+            else:
+                replacement = self._format_memory_content(memory, placeholder)
+
+            start, end = placeholder.position
+            resolved = resolved[:start] + replacement + resolved[end:]
+
+        return resolved
+
+    def _format_memory_content(
+        self,
+        memory: Memory,
+        placeholder: MemoryPlaceholder
+    ) -> str:
+        """根据占位符格式返回对应内容"""
+        if placeholder.format_type == 'full':
+            return memory.content
+        elif placeholder.format_type == 'summary':
+            return memory.summary
+        elif placeholder.format_type.startswith('meta:'):
+            field = placeholder.metafield
+            return memory.metadata.get(field, f"[ERROR: Metadata field {field} not found]")
+        else:
+            return memory.summary
+```
+
+##### 阶段四: 记忆召回轮次控制
+
+```python
+class RecallRoundManager:
+    """
+    管理多轮记忆召回的策略和终止条件
+    """
+
+    def __init__(self):
+        self.round_configs = {
+            1: RecallRoundConfig(
+                round_num=1,
+                strategy="precise",
+                keyword_weight=0.8,
+                semantic_weight=0.2,
+                min_score=0.7,
+                max_results=5,
+                timeout_ms=500
+            ),
+            2: RecallRoundConfig(
+                round_num=2,
+                strategy="expanded",
+                keyword_weight=0.5,
+                semantic_weight=0.5,
+                min_score=0.6,
+                max_results=8,
+                expand_synonyms=True,
+                timeout_ms=800
+            ),
+            3: RecallRoundConfig(
+                round_num=3,
+                strategy="semantic",
+                keyword_weight=0.2,
+                semantic_weight=0.8,
+                min_score=0.5,
+                max_results=10,
+                use_vector_search=True,
+                timeout_ms=1000
+            )
+        }
+
+    async def execute_multi_round_recall(
+        self,
+        query: str,
+        max_rounds: int = 3,
+        early_stop_threshold: float = 0.85
+    ) -> MultiRoundRecallResult:
+        """
+        执行多轮召回，根据每轮结果决定是否继续
+
+        终止条件:
+        1. 获得高相关性结果 (score > 0.85)
+        2. 达到最大轮次
+        3. 连续两轮无新结果
+        4. 总召回数达到上限
+        """
+        all_results = []
+        previous_count = 0
+        no_new_count = 0
+
+        for round_num in range(1, max_rounds + 1):
+            config = self.round_configs[round_num]
+
+            # 执行当前轮次召回
+            round_result = await self._execute_round(query, config)
+
+            # 去重并合并
+            new_memories = self._filter_new_memories(
+                round_result.memories,
+                all_results
+            )
+
+            if not new_memories:
+                no_new_count += 1
+                if no_new_count >= 2:
+                    break  # 连续两轮无新结果
+            else:
+                no_new_count = 0
+                all_results.extend(new_memories)
+
+            # 检查是否获得高相关性结果
+            high_quality_memories = [
+                m for m in new_memories
+                if m.relevance_score >= early_stop_threshold
+            ]
+            if len(high_quality_memories) >= 2:
+                break  # 已获得足够高质量结果
+
+            previous_count = len(all_results)
+
+        return MultiRoundRecallResult(
+            memories=all_results,
+            rounds_executed=round_num,
+            total_found=len(all_results)
+        )
+```
+
 ---
 
 ## 4. 实现计划
 
-### 4.1 阶段一: 基础设施 (Week 1-2)
+### 4.1 阶段一: 基础设施
 
 #### 4.1.1 数据库迁移
 - [ ] 创建 `agent_memory_keywords` 表
@@ -441,7 +1267,7 @@ MEMORY_TOOLS_SYSTEM_PROMPT = """你是一个智能助手，拥有访问用户历
 - [ ] 添加关键词权重计算逻辑
 - [ ] 编写单元测试
 
-### 4.2 阶段二: 搜索算法 (Week 2-3)
+### 4.2 阶段二: 搜索算法
 
 #### 4.2.1 混合搜索实现
 - [ ] 实现 `HybridMemorySearch` 类
@@ -454,7 +1280,7 @@ MEMORY_TOOLS_SYSTEM_PROMPT = """你是一个智能助手，拥有访问用户历
 - [ ] 添加关键词管理方法
 - [ ] 实现同义词扩展查询
 
-### 4.3 阶段三: 记忆工具 (Week 3-4)
+### 4.3 阶段三: 记忆工具
 
 #### 4.3.1 工具定义
 - [ ] 创建工具输入/输出 Pydantic 模型
@@ -466,7 +1292,7 @@ MEMORY_TOOLS_SYSTEM_PROMPT = """你是一个智能助手，拥有访问用户历
 - [ ] 更新 `MemoryContext` 支持工具调用
 - [ ] 添加系统提示词模板
 
-### 4.4 阶段四: 优化与测试 (Week 4-5)
+### 4.4 阶段四: 优化与测试
 
 #### 4.4.1 性能优化
 - [ ] 添加数据库查询缓存
@@ -504,29 +1330,59 @@ class MemoryModel:
 
 ### 5.2 配置更新
 
-```json
-// config.json 新增记忆系统配置
-{
-  "memory_system": {
-    "search": {
-      "default_mode": "hybrid",
-      "keyword_weight": 0.4,
-      "text_similarity_weight": 0.4,
-      "time_decay_weight": 0.2,
-      "half_life_days": 30
-    },
-    "extraction": {
-      "max_keywords_per_memory": 5,
-      "min_keyword_weight": 0.3,
-      "enable_synonym_expansion": true
-    },
-    "tools": {
-      "enable_proactive_search": true,
-      "proactive_search_threshold": 0.7,
-      "max_results_per_search": 5
-    }
-  }
-}
+配置项统一写在 `.env` 文件中，通过环境变量读取：
+
+```bash
+# 记忆系统搜索配置
+MEMORY_SEARCH_DEFAULT_MODE=hybrid
+MEMORY_SEARCH_KEYWORD_WEIGHT=0.4
+MEMORY_SEARCH_TEXT_SIMILARITY_WEIGHT=0.4
+MEMORY_SEARCH_TIME_DECAY_WEIGHT=0.2
+MEMORY_SEARCH_HALF_LIFE_DAYS=30
+
+# 记忆系统关键词提取配置
+MEMORY_EXTRACTION_MAX_KEYWORDS=5
+MEMORY_EXTRACTION_MIN_KEYWORD_WEIGHT=0.3
+MEMORY_EXTRACTION_ENABLE_SYNONYM_EXPANSION=true
+
+# 记忆系统工具配置
+MEMORY_TOOLS_ENABLE_PROACTIVE_SEARCH=true
+MEMORY_TOOLS_PROACTIVE_SEARCH_THRESHOLD=0.7
+MEMORY_TOOLS_MAX_RESULTS_PER_SEARCH=5
+```
+
+Python 加载方式（使用 pydantic-settings 或 python-dotenv）：
+
+```python
+from pydantic_settings import BaseSettings
+from functools import lru_cache
+
+class MemorySystemSettings(BaseSettings):
+    """记忆系统配置"""
+    # 搜索配置
+    memory_search_default_mode: str = "hybrid"
+    memory_search_keyword_weight: float = 0.4
+    memory_search_text_similarity_weight: float = 0.4
+    memory_search_time_decay_weight: float = 0.2
+    memory_search_half_life_days: int = 30
+
+    # 提取配置
+    memory_extraction_max_keywords: int = 5
+    memory_extraction_min_keyword_weight: float = 0.3
+    memory_extraction_enable_synonym_expansion: bool = True
+
+    # 工具配置
+    memory_tools_enable_proactive_search: bool = True
+    memory_tools_proactive_search_threshold: float = 0.7
+    memory_tools_max_results_per_search: int = 5
+
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+
+@lru_cache()
+def get_memory_settings() -> MemorySystemSettings:
+    return MemorySystemSettings()
 ```
 
 ---
@@ -544,17 +1400,6 @@ class MemoryModel:
 - **Agent 工具使用率**: Agent 主动调用记忆工具的频率
 - **用户满意度**: 用户对记忆引用的满意度评分
 - **上下文相关性**: 加载记忆与用户查询的相关性分数
-
----
-
-## 7. 风险评估与缓解
-
-| 风险 | 概率 | 影响 | 缓解措施 |
-|------|------|------|----------|
-| 关键词提取质量不佳 | 中 | 高 | 使用 LLM 验证 + 人工审核样本 |
-| 搜索性能下降 | 中 | 高 | 添加缓存、索引优化、查询限流 |
-| Agent 滥用工具 | 低 | 中 | 限制调用频率、添加相关性阈值 |
-| 数据迁移失败 | 低 | 高 | 完整备份、灰度发布、回滚计划 |
 
 ---
 
