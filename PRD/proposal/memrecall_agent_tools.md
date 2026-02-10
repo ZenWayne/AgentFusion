@@ -217,95 +217,7 @@ async def get_memory_detail_tool(
 
 ---
 
-### 2.3 extract_search_keywords
-
-**描述**: 从用户查询中提取搜索关键词（辅助工具，用于复杂查询分析）。
-
-**输入模型**:
-```python
-class ExtractKeywordsInput(BaseModel):
-    """提取关键词输入"""
-    query: str = Field(..., description="用户原始查询")
-    context: Optional[str] = Field(
-        default=None,
-        description="可选的上下文信息，帮助更准确地提取关键词"
-    )
-    max_keywords: int = Field(
-        default=5,
-        ge=1,
-        le=10,
-        description="最多提取的关键词数量"
-    )
-```
-
-**输出模型**:
-```python
-class KeywordExtractionItem(BaseModel):
-    """提取的关键词项"""
-    keyword: str = Field(..., description="关键词")
-    weight: float = Field(..., description="重要性权重 0.0-1.0")
-    type: str = Field(..., description="类型: entity(实体), action(动作), concept(概念), time(时间)")
-
-class ExtractKeywordsOutput(BaseModel):
-    """提取关键词输出"""
-    success: bool = Field(..., description="是否成功")
-    keywords: List[KeywordExtractionItem] = Field(default=[], description="提取的关键词列表")
-    expanded_query: Optional[str] = Field(None, description="扩展后的搜索查询")
-    message: Optional[str] = Field(None, description="状态或错误信息")
-```
-
-**实现**:
-```python
-async def extract_search_keywords_tool(
-    model_client: ChatCompletionClient,
-    input_data: ExtractKeywordsInput
-) -> ExtractKeywordsOutput:
-    """使用 LLM 从查询中提取关键词"""
-    prompt = f"""从以下查询中提取搜索关键词。
-
-用户查询: {input_data.query}
-{"上下文: " + input_data.context if input_data.context else ""}
-
-请提取最多 {input_data.max_keywords} 个关键词，按重要性排序。
-关键词类型包括:
-- entity: 人名、地名、系统名、文件名等实体
-- action: 操作、动作、命令等行为
-- concept: 概念、主题、技术术语
-- time: 时间相关词汇（如"上周"、"昨天"等）
-
-返回 JSON 格式:
-{{
-    "keywords": [
-        {{"keyword": "词1", "weight": 0.9, "type": "entity"}},
-        {{"keyword": "词2", "weight": 0.7, "type": "action"}}
-    ],
-    "expanded_query": "扩展后的查询描述"
-}}"""
-
-    try:
-        response = await model_client.create(
-            messages=[UserMessage(content=prompt, source="system")],
-            json_output=True
-        )
-
-        result = json.loads(response.content)
-
-        return ExtractKeywordsOutput(
-            success=True,
-            keywords=[KeywordExtractionItem(**kw) for kw in result.get("keywords", [])],
-            expanded_query=result.get("expanded_query")
-        )
-
-    except Exception as e:
-        return ExtractKeywordsOutput(
-            success=False,
-            message=f"关键词提取失败: {str(e)}"
-        )
-```
-
----
-
-### 2.4 expand_context_window
+### 2.3 expand_context_window
 
 **描述**: 请求拓展上下文窗口大小。调用此工具后会立即结束当前迭代，MemoryContext 将重新发起调用并提供更多历史消息。
 
@@ -521,21 +433,6 @@ MEMRECALL_TOOLS: Dict[str, Dict[str, Any]] = {
         "output_model": GetMemoryDetailOutput,
         "func": get_memory_detail_tool,
     },
-    "extract_search_keywords": {
-        "name": "extract_search_keywords",
-        "description": """从复杂查询中提取关键词（辅助工具）。
-
-使用场景:
-1. 用户查询很长很复杂
-2. 不确定应该搜索哪些关键词
-3. 需要系统性地分析用户意图
-
-通常不需要直接调用，search_memories 会自动处理关键词提取
-""",
-        "input_model": ExtractKeywordsInput,
-        "output_model": ExtractKeywordsOutput,
-        "func": extract_search_keywords_tool,
-    },
     "expand_context_window": {
         "name": "expand_context_window",
         "description": """请求拓展上下文窗口大小。
@@ -696,3 +593,44 @@ MemRecallAgent:
 2. **输入验证**: 所有输入参数经过 Pydantic 验证
 3. **SQL 注入防护**: 使用 ORM 参数化查询，禁止原生 SQL
 4. **内容过滤**: 敏感记忆内容需要额外权限验证
+
+---
+
+## 8. MemRecallAgent 返回模型
+
+### 8.1 MemRecallResult
+
+**描述**: MemRecallAgent 完成记忆召回后返回的最终结果，供 MemoryContext 使用。
+
+```python
+from typing import Literal
+
+class MemRecallResult(BaseModel):
+    """MemRecallAgent 返回的记忆召回结果"""
+    action: Literal["RECALL_SUCCESS", "NO_RELEVANT_MEMORY", "NEED_MORE_INFO"] = Field(
+        ..., description="召回结果类型"
+    )
+    memories: List[MemorySearchResultItem] = Field(
+        default=[], description="召回的记忆列表（已展开完整内容）"
+    )
+    formatted_context: str = Field(
+        default="", description="格式化后的记忆文本，可直接注入主Agent上下文"
+    )
+    search_summary: str = Field(
+        default="", description="搜索结果摘要"
+    )
+    confidence: float = Field(
+        default=0.0, ge=0.0, le=1.0, description="召回结果的可信度"
+    )
+    needs_more_info: bool = Field(
+        default=False, description="是否需要更多信息"
+    )
+    follow_up_question: Optional[str] = Field(
+        default=None, description="需要进一步澄清时的问题"
+    )
+```
+
+**使用场景**:
+- `RECALL_SUCCESS`: 成功找到相关记忆，`formatted_context` 包含格式化后的记忆内容
+- `NO_RELEVANT_MEMORY`: 未找到相关记忆或无需召回
+- `NEED_MORE_INFO`: 找到部分信息但需要用户补充更多细节

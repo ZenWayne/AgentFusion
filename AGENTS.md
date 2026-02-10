@@ -284,3 +284,38 @@ These tables exist in SQL schema but lack SQLAlchemy models:
 5. **Error Handling**: Always use proper session management with rollback
 6. **Type Safety**: Follow mandatory type hint guidelines
 7. **Import Rules**: Never use `..` for parent directory traversal
+
+---
+
+## Memory System Conventions (Added 2026-02-10)
+
+### 8. SQLAlchemy ORM - No Raw SQL
+
+**Strict rule: No `text()`, no string SQL construction.**
+
+Use ORM methods exclusively:
+
+```python
+# ✅ CORRECT
+select(Model).where(Model.field == value)
+Model.embedding.op('<=>')(vector)  # pgvector
+func.sum(Model.weight).label('score')
+
+# ❌ INCORRECT
+text("SELECT * FROM table...")
+session.execute(f"SELECT ... {variable}")
+```
+
+### 10. Tool Design Rules
+
+1. **LLM extracts keywords directly** into tool parameters - no separate keyword extraction tool
+2. **Single tool call pattern**: Use `tool.run_json()` consistently, no streaming
+3. **handoff is the ONLY termination mechanism**
+4. **Atomic tools**: One operation per tool, LLM composes them via multiple calls
+
+### 11. Memory Injection Strategy
+
+| Context | Method | When |
+|---------|--------|------|
+| User chat message | Direct expansion | Content injected immediately as SystemMessage |
+| Command execution | Slot placeholder `[memory:key]` | Resolved at execution time via exec_locals |

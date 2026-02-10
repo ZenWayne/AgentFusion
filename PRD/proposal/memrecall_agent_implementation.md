@@ -18,6 +18,46 @@ MemRecallAgent 是一个专门用于记忆搜索和召回的专用 Agent。它�
 3. **快速终止**: 调用 handoff 工具后立即结束，不进行额外迭代
 4. **无状态设计**: 每次调用都是独立的，不保留运行状态
 
+### 1.3 两种工作模式
+
+MemRecallAgent 支持两种工作模式，根据场景选择：
+
+| 模式 | 名称 | LLM 调用次数 | 适用场景 | 延迟 |
+|------|------|-------------|---------|------|
+| **单层决策** | `single_shot` | **1 次** | 意图明确的记忆召回 | **低 (200-300ms)** |
+| **多轮迭代** | `multi_round` | 2-4 次 | 模糊指代，需要探索 | 较高 (500-1500ms) |
+
+#### 单层决策模式（推荐默认）
+
+LLM 只生成搜索参数，代码执行搜索并直接返回结果：
+
+```
+[对话历史 messages] + [记忆提取 sys_msg]
+         │
+         ▼
+   LLM 生成 JSON 参数
+         │
+         ▼
+   代码执行 search_memories
+         │
+         ▼
+   代码直接返回结果（无 handoff）
+```
+
+**Cache 优化**：`messages` 放在前面，已缓存部分无需重复计算；`sys_msg` 固定放在末尾。
+
+#### 多轮迭代模式
+
+LLM 通过工具调用进行多轮搜索，直到满意后 handoff：
+
+```
+第1轮: LLM → search_memories → 评估结果 → 不满意
+第2轮: LLM → search_memories (调整参数) → 评估 → 不满意
+第3轮: LLM → get_memory_detail → handoff → 结束
+```
+
+适用于模糊指代（如"那个方案"）需要多次尝试的场景。
+
 ### 1.2 与 CodeAgent 的主要区别
 
 | 特性 | CodeAgent | MemRecallAgent |
@@ -79,11 +119,13 @@ from tools.memrecall_tools import (
     expand_context_window_tool,
     handoff_tool,
     SearchMemoriesInput,
+    SearchMemoriesOutput,
     GetMemoryDetailInput,
     ExtractKeywordsInput,
     ExpandContextWindowInput,
     HandoffInput,
     MEMRECALL_TOOLS,
+    MemorySearchResultItem,
 )
 
 logger = logging.getLogger(__name__)
@@ -780,6 +822,202 @@ class MemRecallAgent(BaseChatQueue, BaseChatAgent):
     def get_search_count(self) -> int:
         """获取本次运行的搜索次数"""
         return self._search_count
+
+    # --- 单层决策模式（Single Shot Mode）---
+
+    # 固定放在消息末尾的系统提示（cache-friendly）
+    SINGLE_SHOT_SYSMSG = """你是 MemRecallAgent。分析上述对话，输出搜索参数 JSON：
+
+{
+    "query": "搜索意图描述",
+    "keywords": ["关键词1", "关键词2"],
+    "memory_types": ["command_output"|"user_preference"|"general"],
+    "search_mode": "hybrid"|"keyword"|"semantic",
+    "limit": 5,
+    "min_relevance_score": 0.6
+}
+
+判断规则：
+- 提到"执行/运行/重新执行/再次训练" → memory_types=["command_output"]
+- 提到"配置/设置/按照之前的" → memory_types=["user_preference"]
+- 模糊指代 → search_mode="hybrid"
+- 只输出 JSON，无其他内容"""
+
+    async def recall_single_shot(
+        self,
+        messages: Sequence[LLMMessage]
+    ) -> MemRecallResult:
+        """
+        单层决策模式：LLM 生成参数 → 代码执行 → 直接返回
+
+        消息顺序（cache-friendly）：
+            [对话历史 messages] + [记忆提取 sys_msg]
+            └─ 已缓存部分 ─┘     └─ 新计算 ─┘
+
+        Args:
+            messages: 对话历史（已缓存的上下文）
+
+        Returns:
+            MemRecallResult: 召回结果（代码直接返回，无 handoff）
+        """
+        # 1. 构造 cache-friendly 的消息列表
+        # messages 放在前面（可能已缓存），sys_msg 固定放在末尾
+        llm_messages: List[LLMMessage] = [
+            *messages,
+            SystemMessage(content=self.SINGLE_SHOT_SYSMSG, source="system")
+        ]
+
+        # 2. LLM 单次调用生成搜索参数（无工具调用）
+        response = await self._model_client.create(messages=llm_messages)
+        params = SearchMemoriesInput.model_validate_json(response.content)
+
+        # 3. 代码执行搜索（无 LLM 参与）
+        search_result = await self._data_layer.memory.search_memories_advanced(
+            user_id=self._user_id,
+            query=params.query,
+            keywords=params.keywords or [],
+            memory_types=params.memory_types,
+            search_mode=params.search_mode,
+            limit=params.limit
+        )
+
+        # 4. 如需获取完整内容（如命令），代码直接获取
+        memories = search_result.results
+        # 如果是命令类型，获取完整内容
+        if memories and params.memory_types and "command_output" in params.memory_types:
+            memories = await self._expand_memories(memories)
+
+        # 5. 代码格式化并直接返回（无 handoff，无多轮迭代）
+        formatted_context = self._format_memories_for_return(memories)
+
+        return MemRecallResult(
+            action="RECALL_SUCCESS" if memories else "NO_RELEVANT_MEMORY",
+            memories=memories,
+            formatted_context=formatted_context,
+            search_summary=f"单层召回完成，找到 {len(memories)} 条记忆",
+            confidence=max(m.relevance_score for m in memories) if memories else 0.0
+        )
+
+    async def _expand_memories(
+        self,
+        memories: List[MemorySearchResultItem]
+    ) -> List[MemorySearchResultItem]:
+        """获取记忆的完整内容（代码层直接获取）"""
+        expanded = []
+        for mem in memories:
+            if mem.memory_type == "command_output":
+                detail = await self._data_layer.memory.retrieve_memory(
+                    memory_key=mem.memory_key,
+                    user_id=self._user_id
+                )
+                if detail:
+                    mem.content_preview = detail.content
+            expanded.append(mem)
+        return expanded
+
+    def _format_memories_for_return(
+        self,
+        memories: List[MemorySearchResultItem]
+    ) -> str:
+        """格式化记忆为上下文字符串"""
+        if not memories:
+            return "未找到相关历史记忆。"
+
+        parts = ["## 相关历史记忆"]
+        for mem in memories:
+            parts.append(f"\n[{mem.memory_key}] {mem.summary}")
+            parts.append(f"内容: {mem.content_preview[:500]}")
+        return "\n".join(parts)
+
+    async def recall_with_context(
+        self,
+        messages: List[LLMMessage]
+    ) -> MemRecallResult:
+        """
+        基于对话上下文召回记忆（动态召回入口）
+
+        由 MemoryContext.get_messages() 在每次调用大模型前触发。
+        分析整个消息列表，决定是否需要召回记忆。
+
+        Args:
+            messages: 当前对话消息列表
+
+        Returns:
+            MemRecallResult: 召回结果
+        """
+        if not messages:
+            return MemRecallResult(
+                action="NO_RELEVANT_MEMORY",
+                search_summary="无消息需要分析",
+                confidence=0.0
+            )
+
+        # Step 1: 分析是否需要召回记忆
+        should_recall = await self._analyze_recall_need_with_context(messages)
+
+        if not should_recall:
+            return MemRecallResult(
+                action="NO_RELEVANT_MEMORY",
+                search_summary="当前对话无需召回历史记忆",
+                confidence=0.0
+            )
+
+        # Step 2: 使用单层决策模式执行召回
+        # 复用 recall_single_shot 实现
+        return await self.recall_single_shot(messages)
+
+    async def _analyze_recall_need_with_context(
+        self,
+        messages: List[LLMMessage]
+    ) -> bool:
+        """
+        分析消息列表是否需要召回历史记忆
+
+        考虑因素：
+        1. 最后一条消息是否包含指代词、时间词
+        2. 对话上下文是否暗示需要历史信息
+        3. 是否有任务延续的线索
+        """
+        # 提取最后几条消息用于分析（避免上下文过长）
+        recent_messages = messages[-5:] if len(messages) > 5 else messages
+
+        # 构建分析用的对话文本
+        conversation_text = "\n".join([
+            f"{'用户' if isinstance(msg, UserMessage) else '助手'}: {msg.content}"
+            for msg in recent_messages
+            if hasattr(msg, 'content') and msg.content
+        ])
+
+        prompt = f"""分析以下对话是否需要召回历史记忆：
+
+最近对话：
+{conversation_text}
+
+判断标准：
+1. 用户消息是否包含指代词（那个、之前、上次等）？
+2. 是否提到时间相关的词（昨天、上周、之前说过）？
+3. 是否涉及任务延续（继续、接着做）？
+4. 是否有未明确的上下文需要历史信息补充？
+5. 用户是否在询问之前讨论过的内容？
+
+只回答 "YES" 或 "NO"。"""
+
+        try:
+            response = await self._model_client.create(
+                messages=[SystemMessage(content=prompt)]
+            )
+            return "YES" in response.content.upper()
+        except Exception:
+            # 出错时回退到简单规则判断
+            last_msg = messages[-1]
+            if isinstance(last_msg, UserMessage) and last_msg.content:
+                recall_indicators = [
+                    "那个", "之前", "上次", "以前", "之前说过",
+                    "昨天", "上周", "前几天", "继续", "接着"
+                ]
+                return any(ind in last_msg.content for ind in recall_indicators)
+            return False
+
 ```
 
 ---
@@ -873,6 +1111,71 @@ agent = MemRecallAgent(
     max_search_iterations=5  # 允许更多搜索尝试
 )
 ```
+
+### 3.4 两种工作模式对比
+
+#### 单层决策模式（推荐默认）
+
+适用于意图明确的记忆召回，延迟低、无 handoff：
+
+```python
+from autogen_core.models import LLMMessage, UserMessage
+
+# 准备对话历史
+messages: List[LLMMessage] = [
+    UserMessage(content="用户: 重新执行上次的训练命令", source="user"),
+    AssistantMessage(content="AI: 好的，我来帮您找到上次的训练命令。", source="assistant"),
+]
+
+# 单层召回（LLM 只生成参数，代码执行并直接返回）
+result = await mem_recall_agent.recall_single_shot(messages)
+
+print(f"召回动作: {result.action}")  # RECALL_SUCCESS
+print(f"信心度: {result.confidence}")  # 0.92
+print(f"格式化结果:\n{result.formatted_context}")
+# 输出:
+# ## 相关历史记忆
+# [train-001] ResNet训练命令
+# 内容: python train.py --model resnet50 --epochs 100 --batch-size 32
+```
+
+**特点：**
+- 单次 LLM 调用（仅生成 JSON 参数）
+- 代码执行搜索和格式化
+- 无 handoff，直接返回 `MemRecallResult`
+- Cache-friendly：对话历史放前面，sys_msg 固定放末尾
+
+#### 多轮迭代模式
+
+适用于模糊指代，需要 LLM 多次尝试：
+
+```python
+# 使用多轮迭代模式（原有方式）
+mem_recall_agent = MemRecallAgent(
+    name="memory_searcher",
+    model_client=model_client,
+    data_layer=data_layer,
+    user_id=123,
+    max_search_iterations=3  # 最多3轮迭代
+)
+
+# 启动并推送消息
+await mem_recall_agent.start()
+
+async for event in mem_recall_agent.push("那个方案后来怎么样了？"):
+    if isinstance(event, HandoffMessage):
+        # 多轮搜索后返回结果
+        print(f"搜索结果: {event.content}")
+```
+
+**适用场景对比：**
+
+| 用户输入 | 推荐模式 | 理由 |
+|---------|---------|------|
+| "重新执行上次的训练命令" | **单层决策** | 意图明确，关键词清晰 |
+| "按照之前的数据库配置来" | **单层决策** | 配置类，搜索参数易确定 |
+| "那个方案后来怎么样了？" | **多轮迭代** | "那个"模糊，需要多次尝试 |
+| "我之前让你做的那个东西" | **多轮迭代** | 极度模糊，可能需要扩展上下文 |
 
 ---
 
