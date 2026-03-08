@@ -13,6 +13,8 @@ podman run -it --rm \
     -e ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL" \
     -e ANTHROPIC_AUTH_TOKEN="$ANTHROPIC_AUTH_TOKEN" \
     -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+    -e LANG="$LANG" \
+    -e LC_ALL="$LC_ALL" \
     -e http_proxy="$http_proxy" \
     -e https_proxy="$https_proxy" \
     -e HTTP_PROXY="$HTTP_PROXY" \
