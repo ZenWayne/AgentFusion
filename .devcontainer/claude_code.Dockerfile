@@ -1,27 +1,22 @@
-FROM node:20-slim
+FROM ubuntu:24.04
 
-# Install required dependencies for Claude Code
+# Install required dependencies
 RUN apt-get update && apt-get install -y \
     git \
     curl \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code globally
-RUN npm install -g @anthropic-ai/claude-code
+# Install Claude Code using official installer
+RUN curl -fsSL https://claude.ai/install.sh | bash \
+    && cp $(readlink -f /root/.local/bin/claude) /usr/local/bin/claude \
+    && chmod 755 /usr/local/bin/claude
 
-# Create symlink for claude-code binary
-RUN ln -s /usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js /usr/local/bin/claude-code
-
-# Create non-root user
-RUN useradd -m -u 1001 claude && \
-    mkdir -p /workspace && \
-    chown -R claude:claude /workspace /home/claude
+# Create workspace directory with open permissions
+RUN mkdir -p /workspace && chmod 777 /workspace
 
 # Set working directory
 WORKDIR /workspace
 
-# Switch to non-root user
-USER claude
-
-# Default command
-CMD ["claude-code", "--dangerously-skip-permissions"]
+# Default command (runs as any user via --user flag)
+CMD ["claude"]
