@@ -23,9 +23,8 @@ podman run -it --rm \
     "${VOLUME_ARGS[@]}" \
     -v "$HOME/.claude":"/home/$USER/.claude" \
     -v "$HOME/.claude.json":"/home/$USER/.claude.json" \
-    -v "$HOME/.ssh":"/home/$USER/.ssh" \
+    -v "$HOME/.ssh":"/home/$USER/.ssh:ro" \
     -e ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL" \
-    -e ANTHROPIC_AUTH_TOKEN="$ANTHROPIC_AUTH_TOKEN" \
     -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
     -e LANG="$LANG" \
     -e LC_ALL="$LC_ALL" \
