@@ -9,8 +9,14 @@ FROM python:3.12-slim-bookworm
 ARG HOST_USER_NAME
 ARG HOST_USER_UID
 ARG HOST_USER_GID
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+ENV http_proxy=${HTTP_PROXY}
+ENV https_proxy=${HTTPS_PROXY}
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRYTEBYTECODE=1
 ENV UV_COMPILE_BYTECODE=1
@@ -50,14 +56,23 @@ ENV LC_ALL=zh_CN.UTF-8
 RUN mkdir -p /workspace && chmod 777 /workspace
 
 # Create user inside the container with the host's UID/GID
-RUN groupadd --gid ${HOST_USER_GID} ${HOST_USER_NAME} \
-    && useradd --uid ${HOST_USER_UID} --gid ${HOST_USER_GID} -m -s /bin/bash ${HOST_USER_NAME}
+# Handle case where GID already exists
+RUN if getent group ${HOST_USER_GID} > /dev/null 2>&1; then \
+        EXISTING_GROUP=$(getent group ${HOST_USER_GID} | cut -d: -f1) && \
+        useradd --uid ${HOST_USER_UID} --gid ${HOST_USER_GID} -m -s /bin/bash ${HOST_USER_NAME}; \
+    else \
+        groupadd --gid ${HOST_USER_GID} ${HOST_USER_NAME} && \
+        useradd --uid ${HOST_USER_UID} --gid ${HOST_USER_GID} -m -s /bin/bash ${HOST_USER_NAME}; \
+    fi
+
+# Create .local/bin directory for the user
+RUN mkdir -p /home/${HOST_USER_NAME}/.local/bin && chown -R ${HOST_USER_NAME}:${HOST_USER_GID} /home/${HOST_USER_NAME}/.local
 
 # Switch to user for installing uv and claude
 USER ${HOST_USER_NAME}
 
 # Install uv as user
-ADD --chown=${HOST_USER_NAME}:${HOST_USER_NAME} https://astral.sh/uv/install.sh /tmp/uv-install.sh
+ADD --chown=${HOST_USER_NAME}:${HOST_USER_GID} https://astral.sh/uv/install.sh /tmp/uv-install.sh
 RUN sh /tmp/uv-install.sh \
     && rm /tmp/uv-install.sh
 

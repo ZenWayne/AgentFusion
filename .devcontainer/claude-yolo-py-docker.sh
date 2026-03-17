@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Helper function to replace 127.0.0.1:10809 with host.docker.internal:10809
+replace_proxy() {
+    local proxy="$1"
+    echo "${proxy//127.0.0.1:10809/host.docker.internal:10809}"
+}
+
 # 获取当前目录的绝对路径
 WORK_DIR=$(pwd)
 
@@ -28,17 +34,17 @@ podman run -it --rm \
     -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
     -e LANG="$LANG" \
     -e LC_ALL="$LC_ALL" \
-    -e http_proxy="$http_proxy" \
-    -e https_proxy="$https_proxy" \
-    -e HTTP_PROXY="$HTTP_PROXY" \
-    -e HTTPS_PROXY="$HTTPS_PROXY" \
+    -e http_proxy="$(replace_proxy "$http_proxy")" \
+    -e https_proxy="$(replace_proxy "$https_proxy")" \
+    -e HTTP_PROXY="$(replace_proxy "$HTTP_PROXY")" \
+    -e HTTPS_PROXY="$(replace_proxy "$HTTPS_PROXY")" \
     -e NO_PROXY="$NO_PROXY" \
     -e no_proxy="$no_proxy" \
     -e TERM=xterm-256color \
-    -e HOME="$HOME" \
-    -e PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" \
+    -e HOME="/home/$USER" \
+    -e PATH="/home/$USER/.local/bin:/usr/local/bin:/usr/bin:/bin" \
     -e UV_VENV_CLEAR=1 \
     -w "$WORK_DIR" \
-    --entrypoint sh \
+    --entrypoint /home/$USER/.local/bin/claude \
     localhost/claude_code_py:latest \
-    -c "claude --dangerously-skip-permissions \"$@\"" -- "$@"
+    --dangerously-skip-permissions "$@"
