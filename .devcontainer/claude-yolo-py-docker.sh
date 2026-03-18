@@ -17,11 +17,11 @@ VOLUME_ARGS=(-v "$WORK_DIR:$WORK_DIR")
 
 # 如果当前目录有 .venv，额外挂载一个空卷覆盖它（容器自己建venv）
 if [ -d ".venv" ]; then
-    echo "检测到 .venv 目录，已排除（容器将使用独立的虚拟环境：$VOLUME_NAME-venv）"
-    VOLUME_ARGS+=(-v "$VOLUME_NAME-venv:$WORK_DIR/.venv")
+    echo "检测到 .venv 目录，已排除（容器将使用独立的虚拟环境：${VOLUME_NAME}_venv）"
+    VOLUME_ARGS+=(-v "${VOLUME_NAME}_venv:$WORK_DIR/.venv")
 fi
 
-echo "当前目录挂载到：$WORK_DIR"
+#echo "当前目录挂载到：$WORK_DIR"
 
 podman run -it --rm \
     --userns=keep-id \
@@ -32,6 +32,7 @@ podman run -it --rm \
     -v "$HOME/.ssh":"/home/$USER/.ssh:ro" \
     -e ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL" \
     -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+    -e DISABLE_AUTOUPDATER=1 \
     -e LANG="$LANG" \
     -e LC_ALL="$LC_ALL" \
     -e http_proxy="$(replace_proxy "$http_proxy")" \
