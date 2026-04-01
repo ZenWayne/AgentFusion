@@ -1,0 +1,18 @@
+{
+  "articles": {
+    "Attention is all you need": {
+      "source_url": "https://proceedings.neurips.cc/paper/2017/hash/3f5ee243547dee91fbd053c1c4a845aa-Abstract.html"
+    },
+    "An abstractive text summarization technique using transformer model with self-attention mechanism": {
+      "source_url": "https://link.springer.com/article/10.1007/s00521-023-08687-7"
+    },
+    "Transformers in time-series analysis: A tutorial": {
+      "source_url": "https://link.springer.com/article/10.1007/s00034-023-02454-8"
+    },
+    "Transformer models: an introduction and catalog": {
+      "source_url": "https://arxiv.org/abs/2302.07730"
+    }
+  },
+  "index_built_at": "2026-04-02T00:37:52.981241",
+  "document_count": 4
+}

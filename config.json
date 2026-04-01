@@ -1,266 +1,147 @@
 {
     "prompt_root": "config/prompt",
     "mcpServers": {
-        "file_system_windows": {
-            "command": "node",
-            "args": [
-                "${userHome}\\AppData\\Roaming\\npm\\node_modules\\@modelcontextprotocol\\server-filesystem\\dist\\index.js",
-                "${cwd}"
-            ],
-            "env": {}
-        },
-        "file_system_unix": {
-            "command": "npx",
-            "args": [
-                "@modelcontextprotocol/server-filesystem", 
-                "${cwd}"
-            ],
-            "env": {}
-        },
         "file_system": {
             "command": "npx",
             "args": [
-                "@modelcontextprotocol/server-filesystem", 
+                "@modelcontextprotocol/server-filesystem",
                 "${cwd}"
             ],
             "env": {},
             "read_timeout_seconds": 30
-        },
-        "database": {
-            "command": "./.venv/bin/python",
-            "args": [
-                "-m",
-                "agent_fusion_mcp.database_server"
-            ],
-            "env": {}
-        },
-        "database-sse": {
-            "url": "http://localhost:8000/sse"
         }
     },
     "agents": {
-        "human_proxy": {
-            "name": "human_proxy",
-            "description": "用户代理，负责与用户进行对话，并返回用户输入",
-            "labels":["human", "agent"],
-            "input_func":"input",
+        "asci_human_proxy": {
+            "name": "asci_human_proxy",
+            "description": "ASCI系统的用户代理，接收用户研究课题并交付最终报告",
+            "labels": ["ai_science", "human", "agent"],
             "type": "user_proxy_agent",
-            "prompt_path": "agent/human_pt.md"
+            "input_func": "input"
         },
-        "human_proxy_ui_designer": {
-            "name": "human_proxy_ui_designer",
-            "description": "交互设计师兼产品设计师，负责管理产品需求和设计,真的人类用户，除此以外都是agent",
-            "labels":["ui_designer", "agent"],
+        "asci_plan_reviewer": {
+            "name": "asci_plan_reviewer",
+            "description": "用户审批代理，负责审阅并批准Orchestrator制定的研究计划",
+            "labels": ["ai_science", "human", "plan_review"],
+            "type": "user_proxy_agent",
+            "input_func": "input"
+        },
+        "asci_orchestrator": {
+            "name": "asci_orchestrator",
+            "description": "ASCI中央编排器，接收用户研究课题，制定研究计划，协调各子agent执行",
+            "labels": ["ai_science", "orchestrator", "agent"],
             "type": "assistant_agent",
-            "prompt_path": "agent/ui_designer_pt.md",
+            "prompt_path": "agent/asci/orchestrator_pt.md",
             "model_client": "deepseek-chat_DeepSeek",
-            "mcp_tools": []
+            "mcp_tools": [],
+            "bash_enable": true,
+            "graphrag_enable": true,
+            "graphrag_output_dir": "graphrag_output/asci_session"
         },
-        "database_agent": {
-            "name": "database_agent",
-            "description": "数据库助手，负责处理数据库相关的操作",
-            "labels":["database", "agent"],
-            "type": "code_agent",
-            "prompt_path": "agent/database_agent_pt.md",
+        "asci_explorer": {
+            "name": "asci_explorer",
+            "description": "文献发现Agent，搜索Google Scholar、阅读论文、构建GraphRAG知识图谱索引",
+            "labels": ["ai_science", "explorer", "search", "agent"],
+            "type": "assistant_agent",
+            "prompt_path": "agent/asci/explorer_pt.md",
             "model_client": "deepseek-chat_DeepSeek",
-            "mcp_tools": ["database"],
+            "mcp_tools": [],
+            "bash_enable": true,
+            "graphrag_enable": true,
+            "graphrag_index_enable": true,
+            "graphrag_model": "qwen3-max_DashScope",
+            "graphrag_embedding_model": "qwen3-vl-embedding_DashScope",
+            "graphrag_output_dir": "graphrag_output/asci_session"
+        },
+        "asci_analyzer": {
+            "name": "asci_analyzer",
+            "description": "可行性分析Agent，利用GraphRAG知识图谱进行启发性分析，收敛为候选研究路线",
+            "labels": ["ai_science", "analyzer", "agent"],
+            "type": "assistant_agent",
+            "prompt_path": "agent/asci/analyzer_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": [],
+            "bash_enable": true,
+            "graphrag_enable": true,
+            "graphrag_output_dir": "graphrag_output/asci_session"
+        },
+        "asci_critics": {
+            "name": "asci_critics",
+            "description": "质量门控验证Agent，利用GraphRAG溯源验证候选路线的引用准确性和逻辑一致性",
+            "labels": ["ai_science", "critics", "validation", "agent"],
+            "type": "assistant_agent",
+            "prompt_path": "agent/asci/critics_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": [],
+            "bash_enable": true,
+            "graphrag_enable": true,
+            "graphrag_output_dir": "graphrag_output/asci_session"
+        },
+        "asci_executor": {
+            "name": "asci_executor",
+            "description": "PoC执行Agent，接收验证通过的方案，执行概念验证实验并收集结果",
+            "labels": ["ai_science", "executor", "agent"],
+            "type": "code_agent",
+            "prompt_path": "agent/asci/executor_pt.md",
+            "model_client": "deepseek-chat_DeepSeek",
+            "mcp_tools": ["file_system"],
+            "bash_enable": true,
             "handoff_tools": [
                 {
-                    "target": "human_proxy",
-                    "message": "Transfer to user"
+                    "target": "asci_human_proxy",
+                    "message": "Transfer to user for execution review"
                 }
             ]
         },
-        "product_manager": {
-            "name": "product_manager",
-            "description": "产品经理，负责管理产品需求和设计,询问用户需求，并根据用户需求生成产品需求文档",
-            "labels":["product_manager", "agent"],
+        "asci_reporter": {
+            "name": "asci_reporter",
+            "description": "研究报告生成Agent，利用GraphRAG知识图谱综合分析和执行结果，生成带溯源引用的结构化研究报告",
+            "labels": ["ai_science", "reporter", "agent"],
             "type": "assistant_agent",
-            "prompt_path": "agent/prd_pt.md",
+            "prompt_path": "agent/asci/reporter_pt.md",
             "model_client": "deepseek-chat_DeepSeek",
-            "mcp_tools": []
-        },
-        "repeater": {
-            "name": "repeater",
-            "type": "assistant_agent",
-            "labels":["repeater", "agent"],
-            "description": "",
-            "prompt_path": "agent/repeater_pt.md",
-            "model_client": "deepseek-chat_DeepSeek",
-            "mcp_tools": []
-        },
-        "prompt_refiner": {
-            "name": "prompt_refiner",
-            "type": "assistant_agent",
-            "labels":["prompt", "prompt_flow", "agent"],
-            "description": "与用户协作，通过分析反馈迭代优化Prompt，旨在提升最终产出效果。",
-            "prompt_path": "group_chat/prompt_flow/refiner_pt.md",
-            "model_client": "deepseek-chat_DeepSeek",
-            "mcp_tools": []
-        },
-        "executor": {
-            "name": "executor",
-            "type": "assistant_agent",
-            "labels":["prompt", "prompt_flow", "agent"],
-            "description": "执行代理，负责执行具体的任务和操作",
-            "prompt_path": "group_chat/prompt_flow/executor_pt.md",
-            "model_client": "deepseek-chat_DeepSeek",
-            "mcp_tools": []
-        },
-        "file_system": {
-            "name": "file_system",
-            "description": "文件系统操作代理，负责处理文件和目录相关的操作",
-            "labels":["file_system", "agent"],
-            "type": "assistant_agent",
-            "prompt_path": "agent/file_system_pt.md",
-            "model_client": "deepseek-chat_DeepSeek",
-            "mcp_tools": ["file_system"]
-        },
-        "prompt_generalization": {
-            "name": "prompt_generalization",
-            "description": "提示词泛化专家，能将具体的任务提示词转换成适用于多种场景的通用模板，并保持其核心功能完整。",
-            "labels":["prompt", "prompt_specialization", "agent"],
-            "type": "assistant_agent",
-            "prompt_path": "agent/prompt_generalization_pt.md",
-            "model_client": "deepseek-chat_DeepSeek",
-            "mcp_tools": []
-        },
-        "template_extractor": {
-            "name": "template_extractor",
-            "description": "从用户输入的提示词模板中提取参数化模板，并生成一个完整的提示词。",
-            "labels":["prompt", "prompt_specialization", "agent"],
-            "type": "assistant_agent",
-            "prompt_path": "agent/template_extractor_pt.md",
-            "model_client": "deepseek-chat_DeepSeek",
-            "mcp_tools": []
-        },
-        "prompt_specialization": {
-            "name": "prompt_specialization",
-            "description": "通过交互式对话，引导用户填写参数化的提示词模板，以生成一个完整、具体的提示词。",
-            "labels":["prompt", "prompt_specialization", "agent"],
-            "type": "assistant_agent",
-            "prompt_path": "agent/prompt_specialization_pt.md",
-            "model_client": "deepseek-chat_DeepSeek",
-            "mcp_tools": []
-        },
-        "dispatcher": {
-            "name": "dispatcher",
-            "description": "任务分解专家，能将用户输入的任务分解成多个子任务，并生成一个任务分解的提示词。",
-            "labels":["agent", "task", "task_decomposition"],
-            "type": "assistant_agent",
-            "prompt_path": "group_chat/prompt_flow/dispatcher_pt.md",
-            "model_client": "deepseek-chat_DeepSeek",
-            "mcp_tools": []
-        },
-        "ui_designer": {
-            "name": "ui_designer",
-            "description": "ui_designer",
-            "labels":["agent", "ui_designer", "temperory"],
-            "type": "assistant_agent",
-            "prompt_path": "agent/ui_designer_pt.md",
-            "model_client": "deepseek-chat_DeepSeek",
-            "mcp_tools": []
-        },
-        "assistant_agent": {
-            "name": "assistant_agent",
-            "description": "重构后的assistant_agent",
-            "labels": ["agent", "code_execution", "python", "development"],
-            "type": "code_agent",
-            "prompt_path": "agent/assistant_agent_pt.md",
-            "model_client": "deepseek-chat_DeepSeek",
-            "handoff_tools": [
-                {
-                    "target": "user",
-                    "message": "Transfer to user"
-                }
-            ],
-            "mcp_tools": []
-        },
-        "lyra": {
-            "name": "lyra",
-            "description": "AI提示词优化专家，使用4-D方法论将用户输入转化为精确有效的提示词",
-            "labels": ["prompt", "optimization", "lyra", "ai"],
-            "type": "assistant_agent",
-            "prompt_path": "agent/lyra_pt.md",
-            "model_client": "deepseek-chat_DeepSeek",
-            "handoff_tools": [
-                {
-                    "target": "human_proxy",
-                    "message": "Transfer to user"
-                }
-            ],
-            "mcp_tools": []
+            "mcp_tools": [],
+            "bash_enable": true,
+            "graphrag_enable": true,
+            "graphrag_output_dir": "graphrag_output/asci_session"
         }
     },
-    "group_chats": {
-        "file_system": {
-            "name": "file_system",
-            "description": "文件系统操作代理，负责处理文件和目录相关的操作",
-            "labels":["file_system", "agent"],
-            "type": "round_robin_group_chat",
-            "participants": ["file_system"],
-            "handoff_target": "user",
-            "termination_condition": "handoff"
-        },
-        "database_agent": {
-            "name": "database_agent",
-            "description": "",
-            "labels":["database_agent", "agent"],
-            "type": "round_robin_group_chat",
-            "participants": ["database_agent", "human_proxy"],
-            "handoff_target": "user",
-            "termination_condition": "handoff"
-        },
-        "prompt_flow": {
-            "name": "prompt_flow",
-            "description": "Prompt迭代器",
-            "labels":["prompt", "group_chat"],
-            "type": "selector_group_chat",
-            "selector_prompt": "group_chat/prompt_flow/selector_pt.md",
-            "model_client": "deepseek-chat_DeepSeek",
-            "participants": ["prompt_refiner", "executor", "user", "file_system"]
-        },
-        "hil": {
-            "name": "hil",
-            "description": "hil",
-            "labels":["group_chat", "hil"],
-            "type": "selector_group_chat",
-            "selector_prompt": "hil/hil_selector_pt.md",
-            "model_client": "deepseek-chat_DeepSeek",
-            "participants": ["product_manager", "user", "file_system"]
-        }
-    },
+    "group_chats": {},
     "graph_flows": {
-        "prompt_specialization": {
-            "name": "prompt_specialize_flow",
-            "description": "一个用于提示词特例化的工作流，该工作流从模板提取器（template_extractor）开始，然后将任务传递给提示词优化器（prompt_specialization）。",
-            "labels": ["prompt", "prompt_specialization", "graph_flow"],
+        "ai_science": {
+            "name": "asci_research_flow",
+            "description": "ASCI科研选题助手完整管线: Orchestrator → Explorer → Analyzer ↔ Critics → Executor → Reporter",
+            "labels": ["ai_science", "graph_flow", "research"],
             "type": "graph_flow",
-            "participants": ["template_extractor", "prompt_specialization", "file_system", "human_proxy_ui_designer", "human_proxy"],
-            "nodes": [
-                ["human_proxy", "template_extractor"],
-                ["template_extractor", "prompt_specialization"],
-                [
-                    "prompt_specialization", 
-                    {
-                        "<Continue>": ["human_proxy_ui_designer"], 
-                        "<END>": ["human_proxy"]
-                    }
-                ],
-                [
-                    "human_proxy_ui_designer", 
-                    {
-                        "": ["prompt_specialization", "prompt_specialization_loop"]
-                    }
-                ],
-                [
-                    "human_proxy",
-                    {
-                        "": ["file_system", "human_proxy_fs"]
-                    }
-                ]
+            "participants": [
+                "asci_human_proxy",
+                "asci_plan_reviewer",
+                "asci_orchestrator",
+                "asci_explorer",
+                "asci_analyzer",
+                "asci_critics",
+                "asci_executor",
+                "asci_reporter"
             ],
-            "start_node": "human_proxy"
+            "nodes": [
+                ["asci_human_proxy", "asci_orchestrator"],
+                ["asci_orchestrator", {
+                    "<Explore>": "asci_explorer",
+                    "<ReviewPlan>": "asci_plan_reviewer"
+                }],
+                ["asci_plan_reviewer", {
+                    "": ["asci_orchestrator", "plan_review_loop"]
+                }],
+                ["asci_explorer", "asci_analyzer"],
+                ["asci_analyzer", "asci_critics"],
+                ["asci_critics", {
+                    "<Approve>": "asci_executor",
+                    "<Reject>": ["asci_analyzer", "critic_loop"]
+                }],
+                ["asci_executor", "asci_reporter"],
+                ["asci_reporter", "asci_human_proxy"]
+            ],
+            "start_node": "asci_human_proxy"
         }
     }
 }

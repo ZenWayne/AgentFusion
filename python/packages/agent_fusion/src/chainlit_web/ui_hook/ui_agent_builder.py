@@ -42,7 +42,7 @@ class UIAutoGenAgentChatQueue(CodeAgent):
         system_message: str = "You are a helpful code execution assistant. You can execute Python code wrapped in <code> tags and provide results.",
         output_content_type = None,
         output_content_type_format = None,
-        max_tool_iterations: int = 1,
+        max_tool_iterations: int | None = None,
         model_client_streaming: bool = False):
         
         # Initialize CodeAgent with all required parameters

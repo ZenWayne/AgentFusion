@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager, AsyncExitStack
 import asyncio
 import json
 from schemas.graph_flow import ComponentInfo, GraphFlowConfig
-from builders.utils import GraphFlowInfo
+from builders.utils import GraphFlowInfo, AgentInfo
 
 @asynccontextmanager
 async def GraphFlowBuilder(name: str) -> AsyncGenerator[GraphFlow, None]:
@@ -18,7 +18,7 @@ async def GraphFlowBuilder(name: str) -> AsyncGenerator[GraphFlow, None]:
     agent_builder = AgentBuilder()
     async with AsyncExitStack() as stack:
         participants = await asyncio.gather(
-            *[stack.enter_async_context(agent_builder.build(participant)) 
+            *[stack.enter_async_context(agent_builder.build(AgentInfo[participant]))
               for participant in graph_flow_config.participants]
         )
         participants_map = {participant.name: participant for participant in participants}

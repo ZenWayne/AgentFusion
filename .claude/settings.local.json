@@ -13,8 +13,19 @@
       "Bash(move test_group_chat_model.py data_layermodelstest_group_chat_model.py)",
       "Bash(mv:*)",
       "Bash(docker exec:*)",
-      "Bash(docker cp:*)"
+      "Bash(docker cp:*)",
+      "Bash(wait)",
+      "Bash(docker --version)",
+      "Bash(http_proxy=http://127.0.0.1:10809 https_proxy=http://127.0.0.1:10809 docker pull mcr.microsoft.com/playwright:v1.58.0-noble)",
+      "Bash(podman logs:*)",
+      "Bash(podman run:*)",
+      "Bash(podman stop:*)",
+      "Bash(podman rm:*)"
     ],
     "deny": []
+  },
+  "sandbox": {
+    "enabled": false,
+    "autoAllowBashIfSandboxed": false
   }
 }

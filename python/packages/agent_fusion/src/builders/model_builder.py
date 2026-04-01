@@ -9,7 +9,10 @@ import httpx
 
 class ModelClientBuilder:
     """Model client builder following AgentBuilder pattern"""
-    
+
+    def __init__(self, dotenv_path: str = None):
+        self.init_component_map(dotenv_path)
+
     def init_component_map(self,  dotenv_path: str = None):
         load_dotenv(dotenv_path)
         self._component_map: Dict[str, ModelClientConfig] = {

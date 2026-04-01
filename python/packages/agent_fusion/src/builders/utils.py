@@ -29,7 +29,12 @@ def load_info(config_path: str="config.json"):
     global prompt_root
     prompt_root = metadata["prompt_root"]
     for name, mcp_config in metadata["mcpServers"].items():
-        mcp_type = mcp_config.get("type", "stdio")
+        mcp_type = mcp_config.get("type")
+        if mcp_type is None:
+            if "url" in mcp_config:
+                mcp_type = "sse"
+            else:
+                mcp_type = "stdio"
         McpInfo[name] = mcp_factory_func[mcp_type](**mcp_config)
     
     agent_factory_func = {

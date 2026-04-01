@@ -85,7 +85,35 @@ class AgentBuilder:
                     self._handoff_map(handoff_tool.handoff_type, target=handoff_tool.target, message=handoff_tool.message).handoff_tool
                     for handoff_tool in agent_info.handoff_tools
                 ])
-            #tools.append(retrieve_filesystem_tool())
+            if agent_info.bash_enable:
+                from base.handoff import BashFunctionTool
+                tools.append(BashFunctionTool())
+            if agent_info.graphrag_enable:
+                output_dir = agent_info.graphrag_output_dir or "graphrag_output"
+                if agent_info.graphrag_index_enable:
+                    from agents.search_agent.article_store import ArticleStore
+                    from tools.add_article import AddArticleTool
+                    from tools.graphrag_config_builder import build_graphrag_config
+                    from tools.graphrag_index import GraphRAGIndexTool
+                    _store = ArticleStore()
+                    graphrag_config = build_graphrag_config(
+                        agent_info.graphrag_model or agent_info.model_client,
+                        agent_info.graphrag_embedding_model or agent_info.model_client,
+                        output_dir=output_dir,
+                    )
+                    tools.append(AddArticleTool(article_store=_store))
+                    tools.append(GraphRAGIndexTool(article_store=_store, config=graphrag_config, output_dir=output_dir))
+                from tools.graphrag_search import GraphRAGSearchTool
+                from tools.graphrag_trace import GraphRAGTraceTool
+                tools.append(GraphRAGSearchTool(output_dir=output_dir, config=graphrag_config if agent_info.graphrag_index_enable else None))
+                tools.append(GraphRAGTraceTool(output_dir=output_dir, config=graphrag_config if agent_info.graphrag_index_enable else None))
+            elif agent_info.context_search_enable:
+                from agents.search_agent.context_manager import ContextManager
+                from tools.context_search import ContextSearchTool
+                from tools.slice_to_chunk import SliceToChunkTool
+                _cm = ContextManager()
+                tools.append(ContextSearchTool(context_manager=_cm))
+                tools.append(SliceToChunkTool(context_manager=_cm))
             model_client_config = await model_client_builder.get_component_by_name(agent_info.model_client)
             
             # Handle memory model client if specified
@@ -110,7 +138,7 @@ class AgentBuilder:
                     system_message=agent_info.prompt(),
                     output_content_type=None,
                     output_content_type_format=None,
-                    max_tool_iterations=10,
+                    max_tool_iterations=agent_info.max_tool_iterations,
                 )
                 agent.component_label = agent_info.name
                 yield agent
@@ -134,21 +162,56 @@ class AgentBuilder:
                             agent_tools.extend(tools)
                     except Exception as e:
                         print(f"Error fetching agent tools: {e}")
+                if agent_info.bash_enable:
+                    from base.handoff import BashFunctionTool
+                    agent_tools.append(BashFunctionTool())
+                if agent_info.graphrag_enable:
+                    output_dir = agent_info.graphrag_output_dir or "graphrag_output"
+                    graphrag_config = None
+                    if agent_info.graphrag_index_enable:
+                        from agents.search_agent.article_store import ArticleStore
+                        from tools.add_article import AddArticleTool
+                        from tools.graphrag_config_builder import build_graphrag_config
+                        from tools.graphrag_index import GraphRAGIndexTool
+                        _store = ArticleStore()
+                        graphrag_config = build_graphrag_config(
+                            agent_info.graphrag_model or agent_info.model_client,
+                            agent_info.graphrag_embedding_model or agent_info.model_client,
+                            output_dir=output_dir,
+                        )
+                        agent_tools.append(AddArticleTool(article_store=_store))
+                        agent_tools.append(GraphRAGIndexTool(article_store=_store, config=graphrag_config, output_dir=output_dir))
+                    from tools.graphrag_search import GraphRAGSearchTool
+                    from tools.graphrag_trace import GraphRAGTraceTool
+                    agent_tools.append(GraphRAGSearchTool(output_dir=output_dir, config=graphrag_config))
+                    agent_tools.append(GraphRAGTraceTool(output_dir=output_dir, config=graphrag_config))
+                elif agent_info.context_search_enable:
+                    from agents.search_agent.context_manager import ContextManager
+                    from tools.context_search import ContextSearchTool
+                    from tools.slice_to_chunk import SliceToChunkTool
+                    _cm = ContextManager()
+                    agent_tools.append(ContextSearchTool(context_manager=_cm))
+                    agent_tools.append(SliceToChunkTool(context_manager=_cm))
                 prompt = agent_info.prompt()
                 # Build handoffs from handoff_tools
                 handoffs = []
                 if agent_info.handoff_tools:
                     for handoff_tool in agent_info.handoff_tools:
-                        handoff_tool_cls = {
-                            ToolType.HANDOFF_TOOL: HandoffWithTypeRaw,
-                            ToolType.HANDOFF_TOOL_CODE: HandoffCodeWithType,
-                        }.get(handoff_tool.handoff_type, None)
-                        if handoff_tool_cls :
-                            handoffs.append(handoff_tool_cls(target=handoff_tool.target, message=handoff_tool.message))
+                        handoffs.append(self._handoff_map(
+                            handoff_tool.handoff_type,
+                            target=handoff_tool.target,
+                            message=handoff_tool.message
+                        ))
                 else:
                     # Default handoff to user if none specified
-                    handoffs = [HandoffType(target="user", message="Transfer to user.")]
+                    handoffs = [self._handoff_map(
+                        ToolType.HANDOFF_TOOL,
+                        target="user",
+                        message="Transfer to user."
+                    )]
                 
+                # AssistantAgent requires int >= 1, use large number for unlimited
+                _max_iters = agent_info.max_tool_iterations if agent_info.max_tool_iterations is not None else 2**31
                 agent = agent_class(
                     name=agent_info.name,
                     model_client=model_client,
@@ -158,7 +221,7 @@ class AgentBuilder:
                     description=agent_info.description,
                     memory=[user_memory],
                     handoffs=handoffs,
-                    max_tool_iterations=10
+                    max_tool_iterations=_max_iters,
                 )
                 agent.component_label = agent_info.name
                 yield agent

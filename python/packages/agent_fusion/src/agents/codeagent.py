@@ -62,7 +62,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         system_message: str = "You are a helpful code execution assistant. You can execute Python code wrapped in <code> tags and provide results.",
         output_content_type: Optional[bool | type[BaseModel]] = None,
         output_content_type_format: Optional[str] = None,
-        max_tool_iterations: int = 1,
+        max_tool_iterations: int | None = None,
     ):
         BaseChatAgent.__init__(self, name, "A code execution agent that executes Python code and uses LLM for responses.")
         BaseChatQueue.__init__(self)
@@ -347,18 +347,18 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
         # Add the (possibly modified) assistant message to the model context
         await self._model_context.add_message(assistant_message)
 
-        for loop_iteration in range(1,self._max_tool_iterations):            
+        loop_iteration = 0
+        while self._max_tool_iterations is None or loop_iteration < self._max_tool_iterations:
+            loop_iteration += 1
             assert create_result_or_stream_event is not None, "No model result was produced."
-            
+
             #when it finally output str it means this is the final response
             if isinstance(model_result.content, str):
                 yield self._output_llm_response(model_result, message_id)
+                return
             else:
-            
+
                 #otherwise it means it's a tool call
-                # assert isinstance(model_result.content, list) and all(
-                #     isinstance(item, FunctionCall) for item in model_result.content
-                # )
                 tool_call_msg = ToolCallRequestEvent(
                     content=model_result.content,
                     source=self.name,
@@ -377,7 +377,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                         break
                     if isinstance(event, BaseAgentEvent) or isinstance(event, BaseChatMessage):
                         yield event
-                
+
                 executed_calls_and_results = await task
                 exec_results: list[FunctionExecutionResult] = [result for _, result in executed_calls_and_results]
                 tool_call_result_msg = ToolCallExecutionEvent(
@@ -390,7 +390,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
 
                 for exec_result in exec_results:
                     await self._save_tool_result(exec_result.content)
-                
+
                 async for handoff_output in self._check_and_handle_handoff(
                     model_result=model_result,
                     executed_calls_and_results=executed_calls_and_results,
@@ -398,8 +398,8 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                 ):
                     if handoff_output:
                         yield handoff_output
-                
-            
+
+
             llm_messages = await self._get_compatible_context(self._model_client, self._model_context)
             tools =await self._get_tools_from_workbench(llm_messages)
             async for create_result_or_stream_event in self._call_llm(message_id, llm_messages, tools, cancellation_token):
@@ -409,7 +409,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
                     yield create_result_or_stream_event
                 else:
                     pass
-            
+
             # --- NEW: If the model produced a hidden "thought," yield it as an event ---
             if model_result.thought:
                 thought_event = ThoughtEvent(content=model_result.thought, source=self.name)
@@ -424,7 +424,7 @@ class CodeAgent(BaseChatQueue, BaseChatAgent):
             #TODO yield thought event
             await self._model_context.add_message(assistant_message)
 
-        # If we exit the loop without returning, provide final response
+        # If we exit the loop due to max iterations, provide final response
         yield self._output_llm_response(model_result, message_id)
 
     async def _save_tool_result(self, tool_result: str) -> None:

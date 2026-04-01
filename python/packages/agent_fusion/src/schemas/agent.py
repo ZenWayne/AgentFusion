@@ -43,6 +43,15 @@ class AssistantAgentConfig(BaseAgentConfig):
     model_client: str
     memory_model_client: str | None = None
     mcp_tools: list[McpServerParams] | None = None
+    bash_enable: bool = False
+    context_search_enable: bool = False
+    context_search_path: str | None = None
+    graphrag_enable: bool = False
+    graphrag_index_enable: bool = False
+    graphrag_model: str | None = None
+    graphrag_embedding_model: str | None = None
+    graphrag_output_dir: str | None = None
+    max_tool_iterations: int | None = None
 
     @model_validator(mode='before')
     @classmethod

@@ -1,0 +1,369 @@
+2026-04-02 00:38:02.0476 - ERROR - graphrag_llm.middleware.with_logging - Request failed with exception=litellm.BadRequestError: OpenAIException - Error code: 400 - {'error': {'message': "'encoding_format' only support with [float, base64]", 'type': 'invalid_request_error', 'param': None, 'code': None}, 'request_id': '4a08ef64-9c8c-9c64-9af2-ceca647f9b3f'}
+Traceback (most recent call last):
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/llms/openai/openai.py", line 1363, in embedding
+    headers, sync_embedding_response = self.make_sync_openai_embedding_request(
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/litellm_core_utils/logging_utils.py", line 344, in sync_wrapper
+    result = func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/llms/openai/openai.py", line 1236, in make_sync_openai_embedding_request
+    raise e
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/llms/openai/openai.py", line 1228, in make_sync_openai_embedding_request
+    raw_response = openai_client.embeddings.with_raw_response.create(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/openai/_legacy_response.py", line 367, in wrapped
+    return cast(LegacyAPIResponse[R], func(*args, **kwargs))
+                                      ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/openai/resources/embeddings.py", line 136, in create
+    return self._post(
+           ^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1297, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1070, in request
+    raise self._make_status_error_from_response(err.response) from None
+openai.BadRequestError: Error code: 400 - {'error': {'message': "'encoding_format' only support with [float, base64]", 'type': 'invalid_request_error', 'param': None, 'code': None}, 'request_id': '4a08ef64-9c8c-9c64-9af2-ceca647f9b3f'}
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/main.py", line 4923, in embedding
+    response = openai_chat_completions.embedding(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/llms/openai/openai.py", line 1394, in embedding
+    raise OpenAIError(
+litellm.llms.openai.common_utils.OpenAIError: Error code: 400 - {'error': {'message': "'encoding_format' only support with [float, base64]", 'type': 'invalid_request_error', 'param': None, 'code': None}, 'request_id': '4a08ef64-9c8c-9c64-9af2-ceca647f9b3f'}
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/middleware/with_logging.py", line 49, in _request_count_middleware
+    return sync_middleware(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/middleware/with_request_count.py", line 53, in _request_count_middleware
+    result = sync_middleware(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/middleware/with_metrics.py", line 56, in _metrics_middleware
+    response = sync_middleware(**kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/embedding/lite_llm_embedding.py", line 188, in _base_embedding
+    response = litellm.embedding(**new_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/utils.py", line 1775, in wrapper
+    raise e
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/utils.py", line 1596, in wrapper
+    result = original_function(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/main.py", line 5777, in embedding
+    raise exception_type(
+          ^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2456, in exception_type
+    raise e
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 478, in exception_type
+    raise BadRequestError(
+litellm.exceptions.BadRequestError: litellm.BadRequestError: OpenAIException - Error code: 400 - {'error': {'message': "'encoding_format' only support with [float, base64]", 'type': 'invalid_request_error', 'param': None, 'code': None}, 'request_id': '4a08ef64-9c8c-9c64-9af2-ceca647f9b3f'}
+2026-04-02 00:38:07.0460 - ERROR - graphrag_llm.middleware.with_logging - Request failed with exception=litellm.BadRequestError: OpenAIException - Error code: 400 - {'error': {'message': "'encoding_format' only support with [float, base64]", 'type': 'invalid_request_error', 'param': None, 'code': None}, 'request_id': 'a377fcc8-332d-9f58-917d-c133ae747cc8'}
+Traceback (most recent call last):
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/llms/openai/openai.py", line 1363, in embedding
+    headers, sync_embedding_response = self.make_sync_openai_embedding_request(
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/litellm_core_utils/logging_utils.py", line 344, in sync_wrapper
+    result = func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/llms/openai/openai.py", line 1236, in make_sync_openai_embedding_request
+    raise e
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/llms/openai/openai.py", line 1228, in make_sync_openai_embedding_request
+    raw_response = openai_client.embeddings.with_raw_response.create(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/openai/_legacy_response.py", line 367, in wrapped
+    return cast(LegacyAPIResponse[R], func(*args, **kwargs))
+                                      ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/openai/resources/embeddings.py", line 136, in create
+    return self._post(
+           ^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1297, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1070, in request
+    raise self._make_status_error_from_response(err.response) from None
+openai.BadRequestError: Error code: 400 - {'error': {'message': "'encoding_format' only support with [float, base64]", 'type': 'invalid_request_error', 'param': None, 'code': None}, 'request_id': 'a377fcc8-332d-9f58-917d-c133ae747cc8'}
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/main.py", line 4923, in embedding
+    response = openai_chat_completions.embedding(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/llms/openai/openai.py", line 1394, in embedding
+    raise OpenAIError(
+litellm.llms.openai.common_utils.OpenAIError: Error code: 400 - {'error': {'message': "'encoding_format' only support with [float, base64]", 'type': 'invalid_request_error', 'param': None, 'code': None}, 'request_id': 'a377fcc8-332d-9f58-917d-c133ae747cc8'}
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/middleware/with_logging.py", line 49, in _request_count_middleware
+    return sync_middleware(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/middleware/with_request_count.py", line 53, in _request_count_middleware
+    result = sync_middleware(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/middleware/with_metrics.py", line 56, in _metrics_middleware
+    response = sync_middleware(**kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/embedding/lite_llm_embedding.py", line 188, in _base_embedding
+    response = litellm.embedding(**new_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/utils.py", line 1775, in wrapper
+    raise e
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/utils.py", line 1596, in wrapper
+    result = original_function(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/main.py", line 5777, in embedding
+    raise exception_type(
+          ^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2456, in exception_type
+    raise e
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 478, in exception_type
+    raise BadRequestError(
+litellm.exceptions.BadRequestError: litellm.BadRequestError: OpenAIException - Error code: 400 - {'error': {'message': "'encoding_format' only support with [float, base64]", 'type': 'invalid_request_error', 'param': None, 'code': None}, 'request_id': 'a377fcc8-332d-9f58-917d-c133ae747cc8'}
+2026-04-02 00:38:42.0857 - INFO - graphrag_llm.metrics.log_metrics_writer - Metrics for openai/text-embedding-v4: {
+  "attempted_request_count": 52,
+  "successful_response_count": 0,
+  "failed_response_count": 52,
+  "failure_rate": 1.0,
+  "compute_duration_per_response_seconds": 0.0,
+  "cache_hit_rate": 0.0,
+  "tokens_per_response": 0.0,
+  "cost_per_response": 0.0
+}
+2026-04-02 00:38:42.0857 - INFO - graphrag_llm.metrics.log_metrics_writer - Metrics for openai/qwen3-max: {
+  "attempted_request_count": 1321,
+  "successful_response_count": 1321,
+  "failed_response_count": 0,
+  "failure_rate": 0.0,
+  "compute_duration_seconds": 26179.791224241257,
+  "compute_duration_per_response_seconds": 19.818161411234865,
+  "cached_responses": 982,
+  "cache_hit_rate": 0.7433762301286904,
+  "streaming_responses": 0,
+  "responses_with_tokens": 1321,
+  "prompt_tokens": 2125121,
+  "completion_tokens": 784839,
+  "total_tokens": 2909960,
+  "tokens_per_response": 2202.8463285389857,
+  "cost_per_response": 0.0
+}
+2026-04-02 00:44:18.0436 - INFO - graphrag_llm.metrics.log_metrics_writer - Metrics for openai/text-embedding-v4: {
+  "attempted_request_count": 1,
+  "successful_response_count": 1,
+  "failed_response_count": 0,
+  "failure_rate": 0.0,
+  "compute_duration_seconds": 0.5181374549865723,
+  "compute_duration_per_response_seconds": 0.5181374549865723,
+  "cache_hit_rate": 0.0,
+  "streaming_responses": 0,
+  "responses_with_tokens": 1,
+  "prompt_tokens": 8,
+  "total_tokens": 8,
+  "tokens_per_response": 8.0,
+  "cost_per_response": 0.0
+}
+2026-04-02 00:44:18.0436 - INFO - graphrag_llm.metrics.log_metrics_writer - Metrics for openai/qwen3-max: {
+  "attempted_request_count": 27,
+  "successful_response_count": 0,
+  "failed_response_count": 0,
+  "failure_rate": 0.0,
+  "compute_duration_per_response_seconds": 0.0,
+  "cache_hit_rate": 0.0,
+  "tokens_per_response": 0.0,
+  "cost_per_response": 0.0
+}
+2026-04-02 00:50:11.0278 - ERROR - graphrag_llm.middleware.with_logging - Request failed with exception=litellm.BadRequestError: OpenAIException - Error code: 404 - {'error': {'message': 'Unsupported model `qwen3-vl-embedding` for OpenAI compatibility mode.', 'type': 'invalid_request_error', 'param': None, 'code': 'model_not_supported'}, 'request_id': '3bd47752-a4b3-99dd-aedd-0913cb23e1c4'}
+Traceback (most recent call last):
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/llms/openai/openai.py", line 1363, in embedding
+    headers, sync_embedding_response = self.make_sync_openai_embedding_request(
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/litellm_core_utils/logging_utils.py", line 344, in sync_wrapper
+    result = func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/llms/openai/openai.py", line 1236, in make_sync_openai_embedding_request
+    raise e
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/llms/openai/openai.py", line 1228, in make_sync_openai_embedding_request
+    raw_response = openai_client.embeddings.with_raw_response.create(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/openai/_legacy_response.py", line 367, in wrapped
+    return cast(LegacyAPIResponse[R], func(*args, **kwargs))
+                                      ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/openai/resources/embeddings.py", line 136, in create
+    return self._post(
+           ^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1297, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/openai/_base_client.py", line 1070, in request
+    raise self._make_status_error_from_response(err.response) from None
+openai.NotFoundError: Error code: 404 - {'error': {'message': 'Unsupported model `qwen3-vl-embedding` for OpenAI compatibility mode.', 'type': 'invalid_request_error', 'param': None, 'code': 'model_not_supported'}, 'request_id': '3bd47752-a4b3-99dd-aedd-0913cb23e1c4'}
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/main.py", line 4923, in embedding
+    response = openai_chat_completions.embedding(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/llms/openai/openai.py", line 1394, in embedding
+    raise OpenAIError(
+litellm.llms.openai.common_utils.OpenAIError: Error code: 404 - {'error': {'message': 'Unsupported model `qwen3-vl-embedding` for OpenAI compatibility mode.', 'type': 'invalid_request_error', 'param': None, 'code': 'model_not_supported'}, 'request_id': '3bd47752-a4b3-99dd-aedd-0913cb23e1c4'}
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/middleware/with_logging.py", line 49, in _request_count_middleware
+    return sync_middleware(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/middleware/with_request_count.py", line 53, in _request_count_middleware
+    result = sync_middleware(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/middleware/with_metrics.py", line 56, in _metrics_middleware
+    response = sync_middleware(**kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/embedding/lite_llm_embedding.py", line 188, in _base_embedding
+    response = litellm.embedding(**new_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/utils.py", line 1775, in wrapper
+    raise e
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/utils.py", line 1596, in wrapper
+    result = original_function(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/main.py", line 5777, in embedding
+    raise exception_type(
+          ^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2456, in exception_type
+    raise e
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 478, in exception_type
+    raise BadRequestError(
+litellm.exceptions.BadRequestError: litellm.BadRequestError: OpenAIException - Error code: 404 - {'error': {'message': 'Unsupported model `qwen3-vl-embedding` for OpenAI compatibility mode.', 'type': 'invalid_request_error', 'param': None, 'code': 'model_not_supported'}, 'request_id': '3bd47752-a4b3-99dd-aedd-0913cb23e1c4'}
+2026-04-02 00:50:16.0160 - INFO - graphrag_llm.metrics.log_metrics_writer - Metrics for openai/qwen3-vl-embedding: {
+  "attempted_request_count": 1,
+  "successful_response_count": 0,
+  "failed_response_count": 1,
+  "failure_rate": 1.0,
+  "compute_duration_per_response_seconds": 0.0,
+  "cache_hit_rate": 0.0,
+  "tokens_per_response": 0.0,
+  "cost_per_response": 0.0
+}
+2026-04-02 00:50:16.0160 - INFO - graphrag_llm.metrics.log_metrics_writer - Metrics for openai/qwen3-max: {
+  "attempted_request_count": 27,
+  "successful_response_count": 0,
+  "failed_response_count": 0,
+  "failure_rate": 0.0,
+  "compute_duration_per_response_seconds": 0.0,
+  "cache_hit_rate": 0.0,
+  "tokens_per_response": 0.0,
+  "cost_per_response": 0.0
+}
+2026-04-02 00:57:41.0651 - ERROR - graphrag_llm.middleware.with_logging - Request failed with exception=litellm.BadRequestError: Unmapped LLM provider for this endpoint. You passed model=qwen3-vl-embedding, custom_llm_provider=dashscope. Check supported provider and route: https://docs.litellm.ai/docs/providers
+Traceback (most recent call last):
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/middleware/with_logging.py", line 49, in _request_count_middleware
+    return sync_middleware(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/middleware/with_request_count.py", line 53, in _request_count_middleware
+    result = sync_middleware(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/middleware/with_metrics.py", line 56, in _metrics_middleware
+    response = sync_middleware(**kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/embedding/lite_llm_embedding.py", line 188, in _base_embedding
+    response = litellm.embedding(**new_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/utils.py", line 1775, in wrapper
+    raise e
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/utils.py", line 1596, in wrapper
+    result = original_function(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/main.py", line 5777, in embedding
+    raise exception_type(
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/main.py", line 5754, in embedding
+    raise LiteLLMUnknownProvider(
+litellm.exceptions.LiteLLMUnknownProvider: litellm.BadRequestError: Unmapped LLM provider for this endpoint. You passed model=qwen3-vl-embedding, custom_llm_provider=dashscope. Check supported provider and route: https://docs.litellm.ai/docs/providers
+2026-04-02 00:57:44.0964 - ERROR - graphrag_llm.middleware.with_logging - Request failed with exception=litellm.BadRequestError: Unmapped LLM provider for this endpoint. You passed model=qwen3-vl-embedding, custom_llm_provider=dashscope. Check supported provider and route: https://docs.litellm.ai/docs/providers
+Traceback (most recent call last):
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/middleware/with_logging.py", line 49, in _request_count_middleware
+    return sync_middleware(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/middleware/with_request_count.py", line 53, in _request_count_middleware
+    result = sync_middleware(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/middleware/with_metrics.py", line 56, in _metrics_middleware
+    response = sync_middleware(**kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/graphrag_llm/embedding/lite_llm_embedding.py", line 188, in _base_embedding
+    response = litellm.embedding(**new_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/utils.py", line 1775, in wrapper
+    raise e
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/utils.py", line 1596, in wrapper
+    result = original_function(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/main.py", line 5777, in embedding
+    raise exception_type(
+  File "/home/wayne/ZenWayne/AgentFusion/.venv/lib/python3.12/site-packages/litellm/main.py", line 5754, in embedding
+    raise LiteLLMUnknownProvider(
+litellm.exceptions.LiteLLMUnknownProvider: litellm.BadRequestError: Unmapped LLM provider for this endpoint. You passed model=qwen3-vl-embedding, custom_llm_provider=dashscope. Check supported provider and route: https://docs.litellm.ai/docs/providers
+2026-04-02 00:58:06.0266 - INFO - graphrag_llm.metrics.log_metrics_writer - Metrics for dashscope/qwen3-vl-embedding: {
+  "attempted_request_count": 2,
+  "successful_response_count": 0,
+  "failed_response_count": 2,
+  "failure_rate": 1.0,
+  "compute_duration_per_response_seconds": 0.0,
+  "cache_hit_rate": 0.0,
+  "tokens_per_response": 0.0,
+  "cost_per_response": 0.0
+}
+2026-04-02 00:58:06.0266 - INFO - graphrag_llm.metrics.log_metrics_writer - Metrics for openai/qwen3-max: {
+  "failure_rate": 0.0,
+  "compute_duration_per_response_seconds": 0.0,
+  "cache_hit_rate": 0.0,
+  "tokens_per_response": 0.0,
+  "cost_per_response": 0.0
+}
+2026-04-02 01:03:44.0739 - INFO - graphrag_llm.metrics.log_metrics_writer - Metrics for dashscope/qwen3-vl-embedding: {
+  "failure_rate": 0.0,
+  "compute_duration_per_response_seconds": 0.0,
+  "cache_hit_rate": 0.0,
+  "tokens_per_response": 0.0,
+  "cost_per_response": 0.0
+}
+2026-04-02 01:03:44.0739 - INFO - graphrag_llm.metrics.log_metrics_writer - Metrics for openai/qwen3-max: {
+  "attempted_request_count": 27,
+  "successful_response_count": 0,
+  "failed_response_count": 0,
+  "failure_rate": 0.0,
+  "compute_duration_per_response_seconds": 0.0,
+  "cache_hit_rate": 0.0,
+  "tokens_per_response": 0.0,
+  "cost_per_response": 0.0
+}
+2026-04-02 01:09:24.0263 - INFO - graphrag_llm.metrics.log_metrics_writer - Metrics for dashscope/qwen3-vl-embedding: {
+  "failure_rate": 0.0,
+  "compute_duration_per_response_seconds": 0.0,
+  "cache_hit_rate": 0.0,
+  "tokens_per_response": 0.0,
+  "cost_per_response": 0.0
+}
+2026-04-02 01:09:24.0263 - INFO - graphrag_llm.metrics.log_metrics_writer - Metrics for openai/qwen3-max: {
+  "attempted_request_count": 56,
+  "successful_response_count": 56,
+  "failed_response_count": 0,
+  "failure_rate": 0.0,
+  "compute_duration_seconds": 804.0915842056274,
+  "compute_duration_per_response_seconds": 14.890584892696804,
+  "cache_hit_rate": 0.0,
+  "streaming_responses": 2,
+  "responses_with_tokens": 54,
+  "prompt_tokens": 715582,
+  "completion_tokens": 21442,
+  "total_tokens": 737024,
+  "tokens_per_response": 13648.592592592593,
+  "cost_per_response": 0.0
+}

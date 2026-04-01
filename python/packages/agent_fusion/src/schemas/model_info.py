@@ -8,7 +8,7 @@ class ModelClientConfig(BaseModel):
     type: Literal[ComponentType.LLM]
     label: str
     model_name: str
-    base_url: str
+    base_url: str | None
     family: str
     api_key_type: str
     stream: bool
@@ -21,6 +21,9 @@ class model_client(str, Enum):
     deepseek_v3_Aliyun= "deepseek-v3_Aliyun"
     qwq_32b_Aliyun= "qwq-32b_Aliyun"
     gemini_2_5_flash_preview_04_17_Google= "gemini-2.5-flash-preview-04-17_Google"
+    qwen3_max_DashScope= "qwen3-max_DashScope"
+    text_embedding_v4_DashScope= "text-embedding-v4_DashScope"
+    qwen3_vl_embedding_DashScope= "qwen3-vl-embedding_DashScope"
 
 
 model_list = [
@@ -80,11 +83,39 @@ model_list = [
         },
         {
             "type": ComponentType.LLM,
+            "label": model_client.qwen3_max_DashScope,
+            "model_name": "qwen3-max",
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "family": ModelFamily.UNKNOWN,
+            "api_key_type": "DASHSCOPE_API_KEY",
+            "stream": True
+        },
+        {
+            "type": ComponentType.LLM,
             "label": model_client.gemini_2_5_flash_preview_04_17_Google,
             "model_name": "gemini-2.5-flash-preview-04-17",
             "base_url": "https://generativelanguage.googleapis.com/v1beta/models/",
             "family": ModelFamily.GEMINI_2_5_FLASH,
             "api_key_type": "GEMINI_API_KEY",
             "stream": True
+        },
+        {
+            "type": ComponentType.LLM,
+            "label": model_client.text_embedding_v4_DashScope,
+            "model_name": "text-embedding-v4",
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "family": ModelFamily.UNKNOWN,
+            "api_key_type": "DASHSCOPE_API_KEY",
+            "stream": False
+        },
+        {
+            "type": ComponentType.LLM,
+            "label": model_client.qwen3_vl_embedding_DashScope,
+            "model_name": "qwen3-vl-embedding",
+            "base_url": None,
+            "litellm_provider": "dashscope",
+            "family": ModelFamily.UNKNOWN,
+            "api_key_type": "DASHSCOPE_API_KEY",
+            "stream": False
         }
 ]

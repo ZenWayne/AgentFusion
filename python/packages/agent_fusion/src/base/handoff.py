@@ -1,3 +1,7 @@
+import asyncio
+import os
+from typing import Annotated
+
 from autogen_agentchat.base import Handoff
 from autogen_core.tools import BaseTool, FunctionTool
 from pydantic import BaseModel
@@ -36,6 +40,59 @@ class FunctionToolWithType(FunctionTool):
             strict=base_ret["strict"],
             type=self.type
         )
+
+async def _bash_exec(
+    command: Annotated[str, "The bash command to execute"],
+    timeout: Annotated[int, "Timeout in seconds (0 means no timeout)"] = 30,
+    cwd: Annotated[str, "Working directory for the command (empty string means current directory)"] = "",
+    env_vars: Annotated[str, "Extra environment variables as KEY=VALUE pairs separated by newlines"] = "",
+) -> str:
+    """Execute a bash command and return combined stdout/stderr with exit code."""
+    env = os.environ.copy()
+    if env_vars:
+        for line in env_vars.splitlines():
+            line = line.strip()
+            if "=" in line:
+                k, _, v = line.partition("=")
+                env[k.strip()] = v.strip()
+
+    proc = await asyncio.create_subprocess_shell(
+        command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=cwd if cwd else None,
+        env=env,
+    )
+
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(),
+            timeout=timeout if timeout > 0 else None,
+        )
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.communicate()
+        return f"[error] Command timed out after {timeout}s"
+
+    output_parts: list[str] = []
+    if stdout:
+        output_parts.append(stdout.decode(errors="replace"))
+    if stderr:
+        output_parts.append(f"[stderr]\n{stderr.decode(errors='replace')}")
+    output_parts.append(f"[exit code: {proc.returncode}]")
+    return "\n".join(output_parts)
+
+
+class BashFunctionTool(FunctionToolWithType):
+    """A FunctionToolWithType that executes arbitrary bash commands."""
+
+    def __init__(self, **kwargs: object) -> None:
+        kwargs.setdefault("type", ToolType.NORMAL_TOOL)
+        kwargs.setdefault("name", "bash")
+        kwargs.setdefault("description", "Execute a bash command and return its output (stdout + stderr + exit code).")
+        kwargs.setdefault("strict", False)
+        super().__init__(_bash_exec, **kwargs)
+
 
 class HandoffFunctionToolWithType(FunctionToolWithType):
     def __init__(self, *args, **kwargs):
