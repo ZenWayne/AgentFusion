@@ -45,5 +45,9 @@ tmp/
 test/
 
 # Jupyter Notebook
-.ipynb_checkpoints 
+.ipynb_checkpoints
 .chainlit/
+
+# GraphRAG
+cache/
+search_agent/
