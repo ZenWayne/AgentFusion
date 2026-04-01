@@ -51,3 +51,4 @@ test/
 # GraphRAG
 cache/
 search_agent/
+logs/
