@@ -3,6 +3,8 @@
 #        --build-arg HOST_USER_UID=$(id -u) \
 #        --build-arg HOST_USER_GID=$(id -g) \
 #        --build-arg HOST_USER_NAME=$USER \
+#        --build-arg HTTP_PROXY=$HTTP_PROXY \
+#        --build-arg HTTPS_PROXY=$HTTPS_PROXY \
 #        -t claude_code_py .
 FROM python:3.12-slim-bookworm
 
