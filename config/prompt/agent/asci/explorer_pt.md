@@ -27,8 +27,14 @@
 .venv/bin/python -m agents.search_agent.todo_tracker list
 ```
 
+`list` 输出格式：`[ id] [status      ] Title (updated)`
+
 - 若**无任何条目** → 从Phase 1（搜索）开始
 - 若**已有条目** → Phase 1已完成，跳到Step 2
+- 若需删除某条目（如重复、无效URL、不再需要的todo），使用其序号：
+  ```bash
+  .venv/bin/python -m agents.search_agent.todo_tracker remove <id>
+  ```
 
 ### Step 2：检查OCR文件
 对每篇文章，检查OCR文件是否存在：

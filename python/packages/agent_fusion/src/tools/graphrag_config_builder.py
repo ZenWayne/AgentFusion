@@ -9,9 +9,11 @@ from __future__ import annotations
 import os
 
 from dotenv import load_dotenv
+from graphrag.config.models.embed_text_config import EmbedTextConfig
 from graphrag.config.models.graph_rag_config import GraphRagConfig
 from graphrag_chunking.chunking_config import ChunkingConfig
 from graphrag_llm.config.model_config import LLMProviderType, ModelConfig
+from graphrag_llm.config.retry_config import RetryConfig
 from graphrag_storage.storage_config import StorageConfig
 from graphrag_vectors.vector_store_config import VectorStoreConfig
 
@@ -83,13 +85,15 @@ def build_graphrag_config(
                 api_base=comp["base_url"],
                 api_key=comp_api_key,
                 call_args={"temperature": 0.0},
+                retry=RetryConfig(max_retries=3, max_delay=60),
             ),
         },
         embedding_models={
             "default_embedding_model": _build_embedding_config(emb, emb_api_key),
         },
         output_storage=StorageConfig(type="file", base_dir=output_dir),
-        vector_store=VectorStoreConfig(type="lancedb", db_uri=f"{output_dir}/vectors"),
+        vector_store=VectorStoreConfig(type="lancedb", db_uri=f"{output_dir}/vectors", vector_size=1024),
+        embed_text=EmbedTextConfig(batch_size=10),
         chunking=ChunkingConfig(size=600, overlap=100),
         concurrent_requests=50,
     )

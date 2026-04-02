@@ -59,13 +59,9 @@ def _get_config():
     """Get or build a GraphRagConfig for search queries."""
     if _graphrag_config is not None:
         return _graphrag_config
-
-    # Fallback: try to build from env if config wasn't injected
-    from tools.graphrag_config_builder import build_graphrag_config
-    return build_graphrag_config(
-        "deepseek-chat_DeepSeek",
-        "deepseek-chat_DeepSeek",
-        output_dir=_output_dir,
+    raise RuntimeError(
+        "GraphRAG search config not initialized. "
+        "Set graphrag_embedding_model in the agent config so the correct embedding model is used for search."
     )
 
 
@@ -136,6 +132,16 @@ async def _graphrag_search(
                 query=query,
             )
     except Exception as e:
+        err_str = str(e)
+        if "doesn't match the column vector" in err_str and "dim" in err_str:
+            return (
+                f"[error] Embedding dimension mismatch — the current embedding model produces "
+                f"vectors with a different dimension than those stored in the index. "
+                f"This happens when the embedding model is changed after indexing. "
+                f"Fix: delete '{_output_dir}/vectors/' and re-run graphrag_index to rebuild "
+                f"the vector store with the current embedding model.\n"
+                f"Detail: {err_str}"
+            )
         return f"[error] GraphRAG {mode} search failed: {e}"
 
     # Format output

@@ -36,6 +36,7 @@
             "mcp_tools": [],
             "bash_enable": true,
             "graphrag_enable": true,
+            "graphrag_embedding_model": "text-embedding-v4_DashScope",
             "graphrag_output_dir": "graphrag_output/asci_session"
         },
         "asci_explorer": {
@@ -50,7 +51,7 @@
             "graphrag_enable": true,
             "graphrag_index_enable": true,
             "graphrag_model": "qwen3-max_DashScope",
-            "graphrag_embedding_model": "qwen3-vl-embedding_DashScope",
+            "graphrag_embedding_model": "text-embedding-v4_DashScope",
             "graphrag_output_dir": "graphrag_output/asci_session"
         },
         "asci_analyzer": {
@@ -63,6 +64,7 @@
             "mcp_tools": [],
             "bash_enable": true,
             "graphrag_enable": true,
+            "graphrag_embedding_model": "text-embedding-v4_DashScope",
             "graphrag_output_dir": "graphrag_output/asci_session"
         },
         "asci_critics": {
@@ -75,6 +77,7 @@
             "mcp_tools": [],
             "bash_enable": true,
             "graphrag_enable": true,
+            "graphrag_embedding_model": "text-embedding-v4_DashScope",
             "graphrag_output_dir": "graphrag_output/asci_session"
         },
         "asci_executor": {
@@ -103,6 +106,7 @@
             "mcp_tools": [],
             "bash_enable": true,
             "graphrag_enable": true,
+            "graphrag_embedding_model": "text-embedding-v4_DashScope",
             "graphrag_output_dir": "graphrag_output/asci_session"
         }
     },

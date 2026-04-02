@@ -5,6 +5,7 @@ The agent calls this via bash:
   python -m agents.search_agent.todo_tracker add "Paper Title" "https://..."
   python -m agents.search_agent.todo_tracker update "Paper Title" on_progress
   python -m agents.search_agent.todo_tracker update "Paper Title" done
+  python -m agents.search_agent.todo_tracker remove <id>   # 1-based order ID from list
   python -m agents.search_agent.todo_tracker list
 """
 
@@ -80,6 +81,15 @@ class TodoTracker:
             rows.append({"title": title, "url": "", "status": status, "updated": str(date.today())})
         self._write_rows(rows)
 
+    def remove(self, order_id: int) -> bool:
+        """Remove entry by 1-based order ID."""
+        rows = self._read_rows()
+        if order_id < 1 or order_id > len(rows):
+            return False
+        rows.pop(order_id - 1)
+        self._write_rows(rows)
+        return True
+
     def list_all(self) -> list[dict]:
         return self._read_rows()
 
@@ -110,12 +120,27 @@ def main() -> None:
         tracker.update_status(sys.argv[2], sys.argv[3])
         print(f"Updated: {sys.argv[2]} -> {sys.argv[3]}")
 
+    elif cmd == "remove":
+        if len(sys.argv) < 3:
+            print("Usage: todo_tracker remove <id>")
+            sys.exit(1)
+        try:
+            order_id = int(sys.argv[2])
+        except ValueError:
+            print(f"Error: id must be an integer, got {sys.argv[2]!r}")
+            sys.exit(1)
+        if tracker.remove(order_id):
+            print(f"Removed entry #{order_id}")
+        else:
+            print(f"Error: id {order_id} out of range")
+            sys.exit(1)
+
     elif cmd == "list":
         rows = tracker.list_all()
         if not rows:
             print("No articles tracked yet.")
-        for r in rows:
-            print(f"[{r['status']:12s}] {r['title'][:60]} ({r['updated']})")
+        for i, r in enumerate(rows, 1):
+            print(f"[{i:2d}] [{r['status']:12s}] {r['title'][:60]} ({r['updated']})")
 
     else:
         print(f"Unknown command: {cmd}")

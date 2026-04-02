@@ -90,6 +90,7 @@ class AgentBuilder:
                 tools.append(BashFunctionTool())
             if agent_info.graphrag_enable:
                 output_dir = agent_info.graphrag_output_dir or "graphrag_output"
+                graphrag_config = None
                 if agent_info.graphrag_index_enable:
                     from agents.search_agent.article_store import ArticleStore
                     from tools.add_article import AddArticleTool
@@ -103,10 +104,17 @@ class AgentBuilder:
                     )
                     tools.append(AddArticleTool(article_store=_store))
                     tools.append(GraphRAGIndexTool(article_store=_store, config=graphrag_config, output_dir=output_dir))
+                elif agent_info.graphrag_embedding_model:
+                    from tools.graphrag_config_builder import build_graphrag_config
+                    graphrag_config = build_graphrag_config(
+                        agent_info.graphrag_model or agent_info.model_client,
+                        agent_info.graphrag_embedding_model,
+                        output_dir=output_dir,
+                    )
                 from tools.graphrag_search import GraphRAGSearchTool
                 from tools.graphrag_trace import GraphRAGTraceTool
-                tools.append(GraphRAGSearchTool(output_dir=output_dir, config=graphrag_config if agent_info.graphrag_index_enable else None))
-                tools.append(GraphRAGTraceTool(output_dir=output_dir, config=graphrag_config if agent_info.graphrag_index_enable else None))
+                tools.append(GraphRAGSearchTool(output_dir=output_dir, config=graphrag_config))
+                tools.append(GraphRAGTraceTool(output_dir=output_dir, config=graphrag_config))
             elif agent_info.context_search_enable:
                 from agents.search_agent.context_manager import ContextManager
                 from tools.context_search import ContextSearchTool
@@ -181,6 +189,13 @@ class AgentBuilder:
                         )
                         agent_tools.append(AddArticleTool(article_store=_store))
                         agent_tools.append(GraphRAGIndexTool(article_store=_store, config=graphrag_config, output_dir=output_dir))
+                    elif agent_info.graphrag_embedding_model:
+                        from tools.graphrag_config_builder import build_graphrag_config
+                        graphrag_config = build_graphrag_config(
+                            agent_info.graphrag_model or agent_info.model_client,
+                            agent_info.graphrag_embedding_model,
+                            output_dir=output_dir,
+                        )
                     from tools.graphrag_search import GraphRAGSearchTool
                     from tools.graphrag_trace import GraphRAGTraceTool
                     agent_tools.append(GraphRAGSearchTool(output_dir=output_dir, config=graphrag_config))

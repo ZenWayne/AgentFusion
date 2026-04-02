@@ -52,3 +52,4 @@ test/
 cache/
 search_agent/
 logs/
+graphrag_output/

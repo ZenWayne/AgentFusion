@@ -29,11 +29,9 @@ def set_trace_config(output_dir: str, config: object | None = None) -> None:
 def _get_config():
     if _graphrag_config is not None:
         return _graphrag_config
-    from tools.graphrag_config_builder import build_graphrag_config
-    return build_graphrag_config(
-        "deepseek-chat_DeepSeek",
-        "deepseek-chat_DeepSeek",
-        output_dir=_output_dir,
+    raise RuntimeError(
+        "GraphRAG trace config not initialized. "
+        "Set graphrag_embedding_model in the agent config so the correct embedding model is used for search."
     )
 
 
