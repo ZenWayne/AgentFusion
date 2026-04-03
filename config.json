@@ -87,7 +87,6 @@
             "type": "code_agent",
             "prompt_path": "agent/asci/executor_pt.md",
             "model_client": "deepseek-chat_DeepSeek",
-            "mcp_tools": ["file_system"],
             "bash_enable": true,
             "handoff_tools": [
                 {

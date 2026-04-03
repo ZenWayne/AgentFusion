@@ -1,267 +1,288 @@
-# AgentFusion
+# ASCI — AI for Science Copilot Intelligence
 
-A comprehensive AI agent management platform that provides multi-agent orchestration, agent building tools, prompt version management, and real-time chat interface. AgentFusion enables you to create, configure, and deploy AI agents through individual agents, group chats, and graph flows with a complete backend infrastructure.
+ASCI 是一个多 Agent 科研选题助手。用户输入研究课题后，系统自动完成 **文献检索 → 知识图谱构建 → 可行性分析 → 质量验证 → PoC 实验 → 报告生成** 全流程，交付一份带溯源引用的结构化研究报告。
 
-## 🌟 Features
+底层基于 AgentFusion 框架（AutoGen GraphFlow + Chainlit），通过 GraphRAG 知识图谱将多篇论文的实体、关系、社区结构串联起来，为 Agent 间的分析和验证提供共享的语义记忆。
 
-- **Multi-Agent Orchestration**: Deploy individual agents, group chats, or complex graph flows
-- **Database Infrastructure**: PostgreSQL with SQLAlchemy ORM for persistent data storage
-- **User Authentication**: Complete user management with bcrypt password hashing and activity logging
-- **Web Interface**: Chainlit-powered real-time chat interface with WebSocket support
-- **MCP Integration**: Model Context Protocol support for external tool integration
-- **Advanced Memory System**: Configurable memory models and intelligent context initialization
-- **Prompt Management**: Version-controlled prompt system with built-in optimization agents
-- **Activity Logging**: Comprehensive audit trail for all user actions and system events
-- **Flexible Configuration**: JSON-based configuration system for agents, workflows, and integrations
+## demo
+4.40 build index
+10.05 index building complete
+[![ASCI Search Agent demo](https://youtu.be/RXTVtl6Nbz4)](https://youtu.be/RXTVtl6Nbz4)
 
-## 🚀 Quick Start
 
-### 1. Installation
+## 管线架构
+
+```
+用户输入课题
+     │
+     ▼
+┌─────────────────┐
+│  Orchestrator    │── <ReviewPlan> ──▶ Plan Reviewer (用户审批)
+│  (中央编排器)     │◀── 反馈修改 ────────┘
+└────────┬────────┘
+         │ <Explore> (审批通过)
+         ▼
+┌─────────────────┐
+│   Explorer       │  Scholar搜索 → PDF下载 → OCR → 存入ArticleStore → 构建GraphRAG索引
+│  (文献发现)       │
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│   Analyzer       │  GraphRAG语义检索 → 收敛为2-3条候选研究路线
+│  (可行性分析)     │
+└────────┬────────┘
+         ▼
+┌─────────────────┐       <Reject> (最多2次)
+│    Critics       │──────────────────────▶ Analyzer (修订循环)
+│  (质量门控)       │
+└────────┬────────┘
+         │ <Approve>
+         ▼
+┌─────────────────┐
+│   Executor       │  PoC概念验证 (编写并执行代码实验)
+│  (执行器)         │
+└────────┬────────┘
+         ▼
+┌─────────────────┐
+│   Reporter       │  GraphRAG综合查询 → 生成带溯源引用的研究报告
+│  (报告生成)       │
+└────────┬────────┘
+         ▼
+    交付给用户
+```
+
+### PlantUML
+
+```plantuml
+@startuml ASCI Research Flow
+skinparam backgroundColor #FEFEFE
+skinparam roundcorner 10
+
+|User|
+start
+:输入研究课题;
+
+|Orchestrator|
+:解析课题, 制定研究计划;
+note right
+  输出:
+  - 3-5组搜索关键词
+  - 分析维度
+  - 执行约束
+end note
+
+|Plan Reviewer|
+repeat
+  :用户审阅计划;
+backward :Orchestrator 修订计划;
+repeat while (审批?) is (修改) not (通过)
+
+|Explorer|
+partition "文献采集 (每篇论文)" {
+  :Google Scholar 搜索;
+  :wget 下载 PDF;
+  :pdftotext OCR → Markdown;
+  :add_article_for_graph\n存入 ArticleStore;
+}
+:graphrag_index\n一次性构建知识图谱;
+note right
+  GraphRAG 内部:
+  token chunking → 实体抽取
+  → 关系构建 → 社区检测
+  → 报告生成
+  输出 Parquet + LanceDB
+end note
+:graphrag_search 抽查验证;
+
+|Analyzer|
+:graphrag_search(global) 领域概览;
+:graphrag_search(local) 深入关键概念;
+:graphrag_trace 溯源验证;
+:收敛为 2-3 条候选路线;
+note right
+  每条路线包含:
+  步骤 + 引用来源
+  可行性/创新性评估
+  置信度 0-100%
+end note
+
+|Critics|
+:graphrag_trace 引用真实性验证;
+:逻辑一致性 + 置信度校准;
+:graphrag_search 遗漏检查;
+repeat
+  :验证评估;
+backward :Analyzer 按 CriticFinding 修订;
+repeat while (验证通过?) is (<Reject>) not (<Approve>)
+note right: 最多拒绝2次，第3次强制通过\n并将残余风险传递给 Reporter
+
+|Executor|
+:评估可执行性;
+:编写 & 运行 PoC 代码;
+:收集实验结果;
+
+|Reporter|
+:graphrag_search(global) 全景综述;
+:graphrag_search(local) 补充细节;
+:graphrag_trace 关键引用溯源;
+if (存在强制通过的残余风险?) then (是)
+  :在报告中标注残余风险\n及 Critics 拒绝原因;
+endif
+:撰写结构化研究报告;
+:写入 ai_science/output/report.md;
+
+|User|
+:接收研究报告;
+stop
+
+@enduml
+```
+
+## Agent 详情
+
+### Orchestrator — 中央编排器
+
+接收用户课题，分解为搜索关键词组合（中英文 3-5 组），制定包含搜索策略、分析维度、执行约束的研究计划，提交用户审批后协调下游 Agent 按计划执行。
+
+- **路由**: 输出 `<ReviewPlan>` → 转 Plan Reviewer 审批; 输出 `<Explore>` → 转 Explorer 开始搜索
+- **工具**: `bash` (读文件/检查状态), `graphrag_search` (查询已建索引)
+
+### Explorer — 文献发现
+
+按 Orchestrator 的关键词搜索 Google Scholar，下载论文 PDF 并 OCR 为 Markdown，存入 ArticleStore，最终一次性构建 GraphRAG 知识图谱索引。支持断点续跑 — 每次启动检查 ToDoList 和已有索引状态，跳过已完成阶段。
+
+- **阶段**: Search → OCR → Store → GraphRAG Index Build → Verify
+- **工具**:
+
+| 工具 | 说明 |
+|---|---|
+| `bash` | 执行 `scholar` 搜索脚本、`wget` 下载 PDF、`pdftotext` OCR、`todo_tracker` 进度管理 |
+| `add_article_for_graph` | 将 OCR Markdown 文件存入内存 ArticleStore (GraphRAG 索引的数据源) |
+| `graphrag_index` | 对 ArticleStore 所有文章构建知识图谱: token 分片 → LLM 实体抽取 → 关系构建 → 社区检测 → 社区报告 → Parquet + LanceDB 持久化 |
+| `graphrag_search` | 索引构建后的语义搜索，用于抽查验证索引质量 |
+
+### Analyzer — 可行性分析
+
+利用 GraphRAG 知识图谱进行 global (跨文档综述) 和 local (实体级细节) 语义检索，评估每个研究方向的可行性、创新性和风险，收敛为 2-3 条候选研究路线。每条路线的每个步骤都标注 `[来源: <文章名>]`。收到 Critics 的 CriticFinding 反馈时进入修订模式。
+
+- **工具**: `bash`, `graphrag_search` (local/global), `graphrag_trace` (溯源验证)
+
+### Critics — 质量门控
+
+对每条候选路线执行 5 步验证协议:
+1. **引用真实性** — `graphrag_trace` 溯源，检查原文是否支持声明
+2. **逻辑一致性** — 不同文章引用间是否矛盾
+3. **置信度校准** — 证据强度是否匹配给出的置信度
+4. **遗漏检查** — `graphrag_search` 检查是否有被忽略的重要发现
+5. **综合判定** — PASS / WARN / FAIL
+
+- **路由**: `<Approve>` 放行至 Executor; `<Reject>` 打回 Analyzer 附带结构化 CriticFinding
+- **防死循环**: 最多拒绝 2 次，第 3 次强制通过并标注残余风险，残余风险及历次拒绝原因传递给 Reporter 在最终报告中说明
+- **工具**: `bash`, `graphrag_trace`, `graphrag_search`
+
+### Executor — PoC 执行
+
+接收验证通过的候选路线，评估哪些步骤可以通过编程实现 PoC (数据分析、模型训练、算法验证等)，编写代码执行并收集结果。不可逆操作需确认，失败最多重试 2 次。
+
+- **工具**: `bash` (Python 脚本执行、环境准备), `file_system` MCP (文件读写)
+- **输出**: `ai_science/execution/<route_name>/`
+
+### Reporter — 报告生成
+
+综合前序所有 Agent 的分析和执行结果，通过 GraphRAG 的 global 搜索生成领域全景综述，local 搜索补充路线细节，`graphrag_trace` 为关键声明提供原文溯源引用，输出完整的结构化研究报告。若存在 Critics 强制通过的路线，报告中须包含**残余风险声明**，列出 Critics 历次拒绝原因及未解决的问题。
+
+- **工具**: `bash`, `graphrag_search` (local/global), `graphrag_trace`
+- **输出**: `ai_science/output/report.md`
+
+## GraphRAG 工具链
+
+所有 GraphRAG 工具共享同一份索引数据 (`graphrag_output/asci_session/`)，由 Explorer 构建，Analyzer / Critics / Reporter 查询。
+
+| 工具 | 功能 | 使用者 |
+|---|---|---|
+| `add_article_for_graph` | 将 OCR Markdown 存入内存 ArticleStore | Explorer |
+| `graphrag_index` | 一次性构建知识图谱 (实体/关系/社区/向量)，输出 Parquet + LanceDB | Explorer |
+| `graphrag_search` | 语义搜索 — `local` 查实体/关系细节, `global` 生成跨文档综述 | Explorer, Orchestrator, Analyzer, Critics, Reporter |
+| `graphrag_trace` | 溯源追踪 — query → text_units → document → source_url，返回原文片段 + 来源 | Analyzer, Critics, Reporter |
+
+## 技术栈
+
+| 组件 | 技术 |
+|---|---|
+| Agent 编排 | AutoGen AgentChat v0.6.4 — DiGraphBuilder / GraphFlow 构建有向图，条件标签驱动路由 |
+| 知识图谱 | Microsoft GraphRAG — token chunking → LLM 实体抽取 → Leiden 社区检测 → 向量化 |
+| 推理 LLM | DeepSeek-Chat |
+| GraphRAG 抽取 LLM | Qwen3-Max (DashScope) |
+| Embedding | text-embedding-v4 (DashScope) |
+| Web UI | Chainlit + FastAPI |
+
+## 快速开始
 
 ```bash
-# Create and activate virtual environment using uv
-uv venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+# 安装
+uv venv && source .venv/bin/activate
+cd python/packages/agent_fusion && uv pip install -e .
 
-# Install dependencies
-uv pip install -r requirements.txt
+# Playwright 安装（不支持的 Linux 发行版）
 
-# Install the package in development mode
-cd python/packages/agent_fusion
-uv pip install -e .
-```
+如在不受 Playwright 官方支持的 Linux 发行版（如 Arch Linux）上运行，可通过 Docker 启动 Playwright 服务端，测试/应用仍在宿主机运行。
 
-### 2. Database Setup
+**1. 启动 Playwright Docker 服务端**
 
 ```bash
-# Set up PostgreSQL database (production)
-# Or use SQLite for testing - automatically configured
-
-# Run database migrations if needed
-# Database schema is located in sql/progresdb.sql
+docker run -p 3000:3000 --rm --init -it mcr.microsoft.com/playwright:v1.41.0-jammy /bin/sh -c "cd /home/pwuser && npx -y playwright@1.41.0 run-server --port 3000 --host 0.0.0.0"
 ```
 
-### 3. Environment Setup
+服务就绪后输出：
 
-Create a `.env` file in the project root with your API keys:
-
-```env
-DEEPSEEK_API_KEY=your_deepseek_api_key_here
-DASHSCOPE_API_KEY=your_aliyun_api_key_here
-GEMINI_API_KEY=your_google_api_key_here
-
-# Database configuration (optional - defaults to SQLite for testing)
-DATABASE_URL=postgresql://user:password@localhost/agentfusion
+```
+Listening on ws://127.0.0.1:3000/
 ```
 
-### 4. Launch Web Interface
+**2. 将 Playwright 客户端指向 Docker 服务端**
+
+使用 `@playwright/test` 时，只需设置环境变量，无需修改代码：
 
 ```bash
-chainlit run python/packages/agent_fusion/src/chainlit_web/run.py
+PW_TEST_CONNECT_WS_ENDPOINT=ws://127.0.0.1:3000/ npx playwright test
 ```
 
-The web interface will be available at `http://localhost:8000`
+**3. 网络访问宿主机本地服务**
 
-## 📋 Project Structure
+若需在 Docker 容器中访问宿主机上的服务，添加 `--add-host` 参数：
 
-```
-AgentFusion/
-├── config/                          # Configuration files
-│   ├── prompt/                      # Agent prompts organized by type
-│   │   ├── agent/                   # Individual agent prompts
-│   │   ├── group_chat/              # Group chat selectors
-│   │   └── ui_design/               # UI design prompts
-│   └── mem/                         # Memory configurations
-├── python/packages/agent_fusion/    # Main Python package
-│   └── src/
-│       ├── data_layer/              # Database layer with SQLAlchemy ORM
-│       │   ├── models/              # Business logic models
-│       │   └── tables/              # Database table definitions
-│       ├── schemas/                 # Pydantic data models
-│       ├── builders/                # Core builders for agents/workflows
-│       ├── chainlit_web/            # Web interface with user authentication
-│       │   ├── user/                # User management and authentication
-│       │   └── ui_hook/             # UI integration hooks
-│       ├── model_client/            # Model client implementations
-│       ├── base/                    # Base utilities and MCP support
-│       ├── tools/                   # Agent tools and utilities
-│       └── dump/                    # Configuration export utilities
-├── sql/                            # Database schema and migration scripts
-├── config.json                     # Main configuration file
-├── dumped_config/                  # Exported configurations
-├── CLAUDE.md                       # Project memory and guidelines
-└── requirements.txt                # Python dependencies
-```
-
-## 🏗️ Architecture
-
-### Technology Stack
-- **Backend**: Python 3.11+ with FastAPI + Chainlit
-- **Database**: PostgreSQL (production) / SQLite (testing)
-- **ORM**: SQLAlchemy 2.0 with async support
-- **Authentication**: Custom user authentication with bcrypt
-- **Agent Framework**: AutoGen AgentChat
-- **Frontend**: Chainlit with real-time WebSocket connections
-
-### Database Architecture
-- **User Management**: User accounts, authentication, and activity logging
-- **Agent System**: Agent configurations and model clients
-- **Chat System**: Threads, steps, elements, and feedback
-- **Prompt Management**: Prompts with version control
-- **Audit Trail**: Comprehensive activity logging with JSONB metadata
-
-## 🤖 Agent Types
-
-### Individual Agents
-- **file_system**: File and directory operations via MCP
-- **product_manager**: Product requirement documentation
-- **prompt_refiner**: Prompt optimization and refinement
-- **executor**: Task execution specialist
-- **template_extractor**: Extract parameters from prompt templates
-- **prompt_specialization**: Interactive prompt customization
-
-### Group Chats
-- **prompt_flow**: Collaborative prompt development workflow
-- **hil**: Human-in-the-loop product management
-
-### Graph Flows
-- **prompt_specialization**: Template extraction → customization → execution workflow
-
-## ⚙️ Configuration
-
-### Agent Configuration
-
-Agents are defined in `config.json` under the `agents` section:
-
-```json
-{
-  "agents": {
-    "your_agent": {
-      "name": "your_agent",
-      "description": "Agent description",
-      "labels": ["tag1", "tag2"],
-      "type": "assistant_agent",
-      "prompt_path": "agent/your_prompt.md",
-      "model_client": "deepseek-chat_DeepSeek",
-      "memory_model_client": "gemini-2.5-flash-preview-04-17_Google",
-      "mcp_tools": ["file_system"]
-    }
-  }
-}
-```
-
-### Group Chat Configuration
-
-```json
-{
-  "group_chats": {
-    "your_group": {
-      "name": "your_group",
-      "description": "Group description",
-      "type": "selector_group_chat",
-      "selector_prompt": "group_chat/your_selector.md",
-      "model_client": "deepseek-chat_DeepSeek",
-      "participants": ["agent1", "agent2", "human_proxy"]
-    }
-  }
-}
-```
-
-### Graph Flow Configuration
-
-```json
-{
-  "graph_flows": {
-    "your_flow": {
-      "name": "your_flow",
-      "description": "Workflow description",
-      "type": "graph_flow",
-      "participants": ["agent1", "agent2"],
-      "nodes": [
-        ["agent1", "agent2"],
-        ["agent2", {"condition": "agent1"}]
-      ],
-      "start_node": "agent1"
-    }
-  }
-}
-```
-
-## 🔧 Usage Examples
-
-### Export Configuration
-
-Use the dump utilities to export your configuration:
-
-```python
-from dump import dump_agents, dump_group_chats
-
-# Export specific components
-dump_agents(["file_system"], "dumped_config")
-dump_group_chats(["prompt_flow"], "dumped_config")
-```
-
-## 🛠️ Development
-
-### Database Development
 ```bash
-# Run tests
-python -m pytest python/packages/agent_fusion/tests/ -v
-
-# Test specific model
-python -m pytest python/packages/agent_fusion/tests/test_user_model.py -v
+docker run -p 3000:3000 --rm --init -it --add-host=hostmachine:host-gateway \
+  mcr.microsoft.com/playwright:v1.41.0-jammy /bin/sh -c \
+  "cd /home/pwuser && npx -y playwright@1.41.0 run-server --port 3000 --host 0.0.0.0"
 ```
 
-### Adding New Agents
+此时测试中的 URL 需将 `localhost` 替换为 `hostmachine`。
+# 配置 .env
+DEEPSEEK_API_KEY=xxx
+DASHSCOPE_API_KEY=xxx
 
-1. Create a prompt file in `config/prompt/agent/`
-2. Add agent configuration to `config.json`
-3. Update database models if needed (data_layer/models/)
-4. Add tests for new functionality
-5. Test via the web interface
-
-### Database Migrations
-
-1. Update SQL schema in `sql/progresdb.sql`
-2. Update SQLAlchemy models in `data_layer/models/tables/`
-3. Update business logic models in `data_layer/models/`
-4. Add comprehensive tests
-
-### Custom MCP Tools
-
-Define MCP servers in the `mcpServers` section of `config.json`:
-
-```json
-{
-  "mcpServers": {
-    "your_tool": {
-      "command": "your_command",
-      "args": ["arg1", "arg2"],
-      "env": {},
-      "read_timeout_seconds": 30
-    }
-  }
-}
+# 启动
+start the hole asci workflow
+PLAYWRIGHT_WS_ENDPOINT=ws://127.0.0.1:3000/ uv run -m cli.chat graphflow ai_science "why repeat prompt can boost accuracy"
+only start the search_agent
+PLAYWRIGHT_WS_ENDPOINT=ws://127.0.0.1:3000/ uv run -m cli.chat agent search_agent "搜索文章Attention is all you Need的资料"
+# 访问 http://localhost:8000，选择 ai_science flow，输入研究课题即可
 ```
 
-## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature`
-3. Make your changes
-4. Update tests and documentation
-5. Submit a pull request
+## 关键目录
 
-## 📄 License
-
-MIT License - see LICENSE file for details
-
-## 🙏 Acknowledgments
-
-Built on top of [AutoGen](https://github.com/microsoft/autogen) - a powerful framework for multi-agent AI applications. Special thanks to the AutoGen team for their pioneering work in multi-agent orchestration.
-
-## 📞 Support
-
-- Create an [issue](https://github.com/your-repo/issues) for bug reports or feature requests
-- Check the documentation in the `config/prompt/` directory for prompt examples
-- Review `config.json` for configuration patterns
+```
+config.json                              # ASCI 管线配置 (agents + graph_flow 定义)
+config/prompt/agent/asci/                # 6 个 Agent 的 system prompt
+  ├── orchestrator_pt.md
+  ├── explorer_pt.md
+  ├── analyzer_pt.md
+  ├── critics_pt.md
+  ├── executor_pt.md
+  └── reporter_pt.md
+graphrag_output/asci_session/            # GraphRAG 索引产物 (Parquet + LanceDB)
+search_agent/output/                     # OCR 论文 Markdown
+ai_science/output/                       # 最终研究报告
+```
